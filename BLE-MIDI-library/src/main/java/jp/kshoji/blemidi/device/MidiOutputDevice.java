@@ -1,6 +1,6 @@
 package jp.kshoji.blemidi.device;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 /**
  * Represents BLE MIDI Output Device
