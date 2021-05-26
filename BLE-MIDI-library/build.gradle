@@ -34,13 +34,13 @@ dependencies {
     api fileTree(dir: 'libs', include: ['*.jar'])
 }
 
-apply plugin: 'maven'
-group = 'jp.kshoji'
-uploadArchives {
-    repositories.mavenDeployer {
-        repository url: 'file://' + file('../library/repository').absolutePath
-        pom.version = '0.0.10-SNAPSHOT'
-        pom.artifactId = 'ble-midi'
-    }
-}
-task install(dependsOn: uploadArchives)
+//apply plugin: 'maven'
+//group = 'jp.kshoji'
+//uploadArchives {
+//    repositories.mavenDeployer {
+//        repository url: 'file://' + file('../library/repository').absolutePath
+//        pom.version = '0.0.10-SNAPSHOT'
+//        pom.artifactId = 'ble-midi'
+//    }
+//}
+//task install(dependsOn: uploadArchives)
