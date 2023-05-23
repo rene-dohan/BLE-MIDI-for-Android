@@ -1,7 +1,7 @@
 package jp.kshoji.blemidi.util;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.util.SparseIntArray;
 
 import java.io.IOException;
