@@ -1,5 +1,8 @@
 package jp.kshoji.blemidi.peripheral;
 
+import static java.lang.Thread.sleep;
+
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -23,20 +26,14 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import jp.kshoji.blemidi.device.MidiInputDevice;
 import jp.kshoji.blemidi.device.MidiOutputDevice;
-import jp.kshoji.blemidi.listener.OnMidiDeviceAttachedListener;
-import jp.kshoji.blemidi.listener.OnMidiDeviceDetachedListener;
 import jp.kshoji.blemidi.listener.OnMidiInputEventListener;
 import jp.kshoji.blemidi.util.BleMidiParser;
 import jp.kshoji.blemidi.util.BleUuidUtils;
@@ -49,7 +46,8 @@ import jp.kshoji.blemidi.util.Constants;
  * @author K.Shoji
  */
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-public class BleMidiPeripheralProvider {
+@SuppressLint("MissingPermission")
+public abstract class BleMidiPeripheralProvider {
 
     /**
      * Gatt Services
@@ -86,9 +84,6 @@ public class BleMidiPeripheralProvider {
     public final Map<String, MidiOutputDevice> midiOutputDevicesMap = new HashMap<>();
     public final Map<String, BluetoothDevice> bluetoothDevicesMap = new HashMap<>();
 
-    public OnMidiDeviceAttachedListener midiDeviceAttachedListener;
-    public OnMidiDeviceDetachedListener midiDeviceDetachedListener;
-
     private String manufacturer = "kshoji.jp";
     private String deviceName = "BLE MIDI";
 
@@ -108,12 +103,12 @@ public class BleMidiPeripheralProvider {
             throw new UnsupportedOperationException("Bluetooth is not available.");
         }
 
-        if (bluetoothAdapter.isEnabled() == false) {
+        if (!bluetoothAdapter.isEnabled()) {
             throw new UnsupportedOperationException("Bluetooth is disabled.");
         }
 
         Log.d(Constants.TAG, "isMultipleAdvertisementSupported:" + bluetoothAdapter.isMultipleAdvertisementSupported());
-        if (bluetoothAdapter.isMultipleAdvertisementSupported() == false) {
+        if (!bluetoothAdapter.isMultipleAdvertisementSupported()) {
             throw new UnsupportedOperationException("Bluetooth LE Advertising not supported on this device.");
         }
 
@@ -142,6 +137,7 @@ public class BleMidiPeripheralProvider {
     /**
      * Starts advertising
      */
+
     public void startAdvertising() throws SecurityException {
         // register Gatt service to Gatt server
         if (gattServer == null) {
@@ -160,14 +156,14 @@ public class BleMidiPeripheralProvider {
                 gattServer.addService(informationGattService);
                 while (gattServer.getService(informationGattService.getUuid()) == null) {
                     try {
-                        Thread.sleep(10);
+                        sleep(10);
                     } catch (InterruptedException ignored) {
                     }
                 }
                 gattServer.addService(midiGattService);// NullPointerException, DeadObjectException thrown here
                 while (gattServer.getService(midiGattService.getUuid()) == null) {
                     try {
-                        Thread.sleep(10);
+                        sleep(10);
                     } catch (InterruptedException ignored) {
                     }
                 }
@@ -181,7 +177,7 @@ public class BleMidiPeripheralProvider {
                 }
 
                 try {
-                    Thread.sleep(100);
+                    sleep(100);
                 } catch (InterruptedException ignored) {
                 }
             }
@@ -227,19 +223,6 @@ public class BleMidiPeripheralProvider {
      */
     private final AdvertiseCallback advertiseCallback = new AdvertiseCallback() {
     };
-
-    /**
-     * Disconnects the specified device
-     *
-     * @param midiInputDevice the device
-     */
-    public void disconnectDevice(@NonNull MidiInputDevice midiInputDevice) {
-        if (!(midiInputDevice instanceof InternalMidiInputDevice)) {
-            return;
-        }
-
-        disconnectByDeviceAddress(midiInputDevice.getDeviceAddress());
-    }
 
     /**
      * Disconnects the specified device
@@ -350,39 +333,11 @@ public class BleMidiPeripheralProvider {
 
             switch (newState) {
                 case BluetoothProfile.STATE_CONNECTED:
-                    connectMidiDevice(device);
+                    onDeviceConnected(device);
                     break;
 
                 case BluetoothProfile.STATE_DISCONNECTED:
-                    String deviceAddress = device.getAddress();
-
-                    synchronized (midiInputDevicesMap) {
-                        MidiInputDevice midiInputDevice = midiInputDevicesMap.get(deviceAddress);
-                        if (midiInputDevice != null) {
-                            midiInputDevicesMap.remove(deviceAddress);
-
-                            ((InternalMidiInputDevice) midiInputDevice).stop();
-                            midiInputDevice.setOnMidiInputEventListener(null);
-                            if (midiDeviceDetachedListener != null) {
-                                midiDeviceDetachedListener.onMidiInputDeviceDetached(midiInputDevice);
-                            }
-                        }
-                    }
-
-                    synchronized (midiOutputDevicesMap) {
-                        MidiOutputDevice midiOutputDevice = midiOutputDevicesMap.get(deviceAddress);
-                        if (midiOutputDevice != null) {
-                            midiOutputDevicesMap.remove(deviceAddress);
-
-                            if (midiDeviceDetachedListener != null) {
-                                midiDeviceDetachedListener.onMidiOutputDeviceDetached(midiOutputDevice);
-                            }
-                        }
-                    }
-
-                    synchronized (bluetoothDevicesMap) {
-                        bluetoothDevicesMap.remove(deviceAddress);
-                    }
+                    onDeviceDisconnected(device);
                     break;
             }
         }
@@ -462,74 +417,9 @@ public class BleMidiPeripheralProvider {
         }
     };
 
-    /**
-     * Connect as BLE MIDI device with specified {@link android.bluetooth.BluetoothDevice}
-     *
-     * @param device the device
-     */
-    protected void connectMidiDevice(@NonNull BluetoothDevice device) {
-        MidiInputDevice midiInputDevice = new InternalMidiInputDevice(device);
-        MidiOutputDevice midiOutputDevice = new InternalMidiOutputDevice(device, gattServer, midiCharacteristic);
+    protected abstract void onDeviceConnected(@NonNull BluetoothDevice device);
 
-        String deviceAddress = device.getAddress();
-
-        synchronized (midiInputDevicesMap) {
-            midiInputDevicesMap.put(deviceAddress, midiInputDevice);
-        }
-
-        synchronized (midiOutputDevicesMap) {
-            midiOutputDevicesMap.put(deviceAddress, midiOutputDevice);
-        }
-
-        synchronized (bluetoothDevicesMap) {
-            bluetoothDevicesMap.put(deviceAddress, device);
-        }
-
-        if (midiDeviceAttachedListener != null) {
-            midiDeviceAttachedListener.onMidiInputDeviceAttached(midiInputDevice);
-            midiDeviceAttachedListener.onMidiOutputDeviceAttached(midiOutputDevice);
-        }
-    }
-
-    /**
-     * Obtains the set of {@link jp.kshoji.blemidi.device.MidiInputDevice} that is currently connected
-     *
-     * @return the set contains all connected devices
-     */
-    @NonNull
-    public Set<MidiInputDevice> getMidiInputDevices() {
-        Set<MidiInputDevice> result = new HashSet<>(midiInputDevicesMap.values());
-        return Collections.unmodifiableSet(result);
-    }
-
-    /**
-     * Obtains the set of {@link jp.kshoji.blemidi.device.MidiOutputDevice} that is currently connected
-     *
-     * @return the set contains all connected devices
-     */
-    @NonNull
-    public Set<MidiOutputDevice> getMidiOutputDevices() {
-        Set<MidiOutputDevice> result = new HashSet<>(midiOutputDevicesMap.values());
-        return Collections.unmodifiableSet(result);
-    }
-
-    /**
-     * Set the listener for attaching devices
-     *
-     * @param midiDeviceAttachedListener the listener
-     */
-    public void setOnMidiDeviceAttachedListener(@Nullable OnMidiDeviceAttachedListener midiDeviceAttachedListener) {
-        this.midiDeviceAttachedListener = midiDeviceAttachedListener;
-    }
-
-    /**
-     * Set the listener for detaching devices
-     *
-     * @param midiDeviceDetachedListener the listener
-     */
-    public void setOnMidiDeviceDetachedListener(@Nullable OnMidiDeviceDetachedListener midiDeviceDetachedListener) {
-        this.midiDeviceDetachedListener = midiDeviceDetachedListener;
-    }
+    protected abstract void onDeviceDisconnected(@NonNull BluetoothDevice device);
 
     /**
      * Set the manufacturer name
@@ -573,7 +463,7 @@ public class BleMidiPeripheralProvider {
      * @author K.Shoji
      */
     public static final class InternalMidiInputDevice extends MidiInputDevice {
-        private final BluetoothDevice bluetoothDevice;
+        public final BluetoothDevice bluetoothDevice;
 
         private final BleMidiParser midiParser = new BleMidiParser(this);
 
@@ -590,7 +480,7 @@ public class BleMidiPeripheralProvider {
         /**
          * Stops parser's thread
          */
-        void stop() {
+        public void stop() {
             midiParser.stop();
         }
 
@@ -660,7 +550,6 @@ public class BleMidiPeripheralProvider {
         @Override
         public void transferData(@NonNull byte[] writeBuffer) throws SecurityException {
             midiOutputCharacteristic.setValue(writeBuffer);
-
             try {
                 bluetoothGattServer.notifyCharacteristicChanged(bluetoothDevice, midiOutputCharacteristic, false);
             } catch (Throwable ignored) {
