@@ -10,6 +10,7 @@ import android.companion.BluetoothLeDeviceFilter;
 import android.content.Context;
 import android.os.Build;
 import android.os.ParcelUuid;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -29,7 +30,7 @@ public final class BleMidiDeviceUtils {
     /**
      * Obtains BluetoothGattService for MIDI
      *
-     * @param context the context
+     * @param context       the context
      * @param bluetoothGatt the gatt of device
      * @return null if no service found
      */
@@ -53,7 +54,7 @@ public final class BleMidiDeviceUtils {
     /**
      * Obtains BluetoothGattCharacteristic for MIDI Input
      *
-     * @param context the context
+     * @param context              the context
      * @param bluetoothGattService the gatt service of device
      * @return null if no characteristic found
      */
@@ -77,7 +78,7 @@ public final class BleMidiDeviceUtils {
     /**
      * Obtains BluetoothGattCharacteristic for MIDI Output
      *
-     * @param context the context
+     * @param context              the context
      * @param bluetoothGattService the gatt service of device
      * @return null if no characteristic found
      */
@@ -131,9 +132,9 @@ public final class BleMidiDeviceUtils {
         String[] uuidStringArray = context.getResources().getStringArray(R.array.uuidListForService);
         for (String uuidString : uuidStringArray) {
             associationRequestBuilder.addDeviceFilter(
-                new BluetoothLeDeviceFilter.Builder().setScanFilter(
-                    new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(uuidString)).build()
-                ).build()
+                    new BluetoothLeDeviceFilter.Builder().setScanFilter(
+                            new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(uuidString)).build()
+                    ).build()
             );
         }
 

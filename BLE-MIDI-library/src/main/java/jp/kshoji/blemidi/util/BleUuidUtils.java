@@ -1,6 +1,7 @@
 package jp.kshoji.blemidi.util;
 
 import android.os.ParcelUuid;
+
 import androidx.annotation.NonNull;
 
 import java.util.UUID;
@@ -17,7 +18,7 @@ public final class BleUuidUtils {
      *
      * @param uuidString the UUID string to parse.
      * @return an UUID instance.
-     * @throws java.lang.NullPointerException if uuid is null.
+     * @throws java.lang.NullPointerException     if uuid is null.
      * @throws java.lang.IllegalArgumentException if uuid is not formatted correctly.
      */
     @NonNull
@@ -59,7 +60,7 @@ public final class BleUuidUtils {
      * @return short style value, -1 if the specified UUID is not short style
      */
     public static int toShortValue(@NonNull UUID uuid) {
-        return (int)((uuid.getMostSignificantBits() >> 32) & 0xffff);
+        return (int) ((uuid.getMostSignificantBits() >> 32) & 0xffff);
     }
 
     /**

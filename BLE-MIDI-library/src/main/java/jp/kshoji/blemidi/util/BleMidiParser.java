@@ -23,15 +23,36 @@ import jp.kshoji.blemidi.listener.OnMidiInputEventListener;
  * @author K.Shoji
  */
 public final class BleMidiParser {
-    // MIDI event message
-    private int midiEventKind;
-    private int midiEventNote;
-    private int midiEventVelocity;
-
     // for RPN/NRPN messages
     private static final int RPN_STATUS_NONE = 0;
     private static final int RPN_STATUS_RPN = 1;
     private static final int RPN_STATUS_NRPN = 2;
+    // states
+    private static final int MIDI_STATE_TIMESTAMP = 0;
+    private static final int MIDI_STATE_WAIT = 1;
+    private static final int MIDI_STATE_SIGNAL_2BYTES_2 = 21;
+    private static final int MIDI_STATE_SIGNAL_3BYTES_2 = 31;
+    private static final int MIDI_STATE_SIGNAL_3BYTES_3 = 32;
+    private static final int MIDI_STATE_SIGNAL_SYSEX = 41;
+    // for Timestamp
+    private static final int MAX_TIMESTAMP = 8192;
+    private static final int BUFFER_LENGTH_MILLIS = 50;
+    private final SparseIntArray rpnCacheMsb = new SparseIntArray();
+    private final SparseIntArray rpnCacheLsb = new SparseIntArray();
+    private final SparseIntArray nrpnCacheMsb = new SparseIntArray();
+    private final SparseIntArray nrpnCacheLsb = new SparseIntArray();
+    // for SysEx messages
+    private final Object systemExclusiveLock = new Object();
+    private final ReusableByteArrayOutputStream systemExclusiveStream = new ReusableByteArrayOutputStream();
+    private final ReusableByteArrayOutputStream systemExclusiveRecoveryStream = new ReusableByteArrayOutputStream();
+    private final MidiInputDevice sender;
+    private final EventDequeueRunnable eventDequeueRunnable;
+    private final Thread eventDequeueThread;
+    private final Collection<MidiEventWithTiming> queuedEventList = new ArrayList<>();
+    // MIDI event message
+    private int midiEventKind;
+    private int midiEventNote;
+    private int midiEventVelocity;
     private int rpnNrpnFunction;
     private int rpnNrpnValueMsb;
     private int rpnNrpnValueLsb;
@@ -40,40 +61,13 @@ public final class BleMidiParser {
     private int rpnFunctionLsb = 0x7f;
     private int nrpnFunctionMsb = 0x7f;
     private int nrpnFunctionLsb = 0x7f;
-
-    private final SparseIntArray rpnCacheMsb = new SparseIntArray();
-    private final SparseIntArray rpnCacheLsb = new SparseIntArray();
-    private final SparseIntArray nrpnCacheMsb = new SparseIntArray();
-    private final SparseIntArray nrpnCacheLsb = new SparseIntArray();
-
-    // for SysEx messages
-    private final Object systemExclusiveLock = new Object();
-    private final ReusableByteArrayOutputStream systemExclusiveStream = new ReusableByteArrayOutputStream();
-    private final ReusableByteArrayOutputStream systemExclusiveRecoveryStream = new ReusableByteArrayOutputStream();
-
-    // states
-    private static final int MIDI_STATE_TIMESTAMP = 0;
-    private static final int MIDI_STATE_WAIT = 1;
-    private static final int MIDI_STATE_SIGNAL_2BYTES_2 = 21;
-    private static final int MIDI_STATE_SIGNAL_3BYTES_2 = 31;
-    private static final int MIDI_STATE_SIGNAL_3BYTES_3 = 32;
-    private static final int MIDI_STATE_SIGNAL_SYSEX = 41;
     private int midiState;
-
-    // for Timestamp
-    private static final int MAX_TIMESTAMP = 8192;
-    private static final int BUFFER_LENGTH_MILLIS = 50;
     private int timestamp = 0;
     private int lastTimestamp;
     private long lastTimestampRecorded = 0;
     private int zeroTimestampCount = 0;
     private Boolean isTimestampAlwaysZero = null;
-
     private OnMidiInputEventListener midiInputEventListener = null;
-    private final MidiInputDevice sender;
-
-    private final EventDequeueRunnable eventDequeueRunnable;
-    private final Thread eventDequeueThread;
 
     /**
      * Constructor
@@ -108,177 +102,6 @@ public final class BleMidiParser {
     public void stop() {
         if (eventDequeueRunnable != null) {
             eventDequeueRunnable.isRunning = false;
-        }
-    }
-
-    /**
-     * {@link Runnable} with MIDI event data, and firing timing
-     */
-    private abstract class MidiEventWithTiming implements Runnable {
-        private static final int INVALID = -1;
-
-        private final long timing;
-        private final int arg1;
-        private final int arg2;
-        private final int arg3;
-        private final byte[] array;
-
-        /**
-         * Calculate `time to wait` for the event's timestamp
-         *
-         * @param timestamp the event's timestamp
-         * @return time to wait
-         */
-        private long calculateEventFireTime(final int timestamp) {
-            final long currentTimeMillis = System.currentTimeMillis();
-
-            // checks timestamp value is always zero
-            if (isTimestampAlwaysZero != null) {
-                if (isTimestampAlwaysZero) {
-                    if (timestamp != 0) {
-                        // timestamp comes with non-zero. prevent misdetection
-                        isTimestampAlwaysZero = false;
-                        zeroTimestampCount = 0;
-                        lastTimestampRecorded = 0;
-                    } else {
-                        // event fires immediately
-                        return currentTimeMillis;
-                    }
-                } else {
-                    if (timestamp == 0) {
-                        // recheck timestamp value on next time
-                        isTimestampAlwaysZero = null;
-                        zeroTimestampCount = 0;
-                        // event fires immediately
-                        return currentTimeMillis;
-                    }
-                }
-            } else {
-                if (timestamp == 0) {
-                    if (zeroTimestampCount >= 3) {
-                        // decides timestamp is always zero
-                        isTimestampAlwaysZero = true;
-                    } else {
-                        zeroTimestampCount++;
-                    }
-                    // event fires immediately
-                    return currentTimeMillis;
-                } else {
-                    isTimestampAlwaysZero = false;
-                    zeroTimestampCount = 0;
-                    lastTimestampRecorded = 0;
-                }
-            }
-
-            if (lastTimestampRecorded == 0) {
-                // first time: event fires immediately
-                lastTimestamp = timestamp;
-                lastTimestampRecorded = currentTimeMillis;
-                return currentTimeMillis;
-            }
-
-            if (currentTimeMillis - lastTimestampRecorded >= MAX_TIMESTAMP) {
-                // the event comes after long pause
-                lastTimestamp = timestamp;
-                lastTimestampRecorded = currentTimeMillis;
-                return currentTimeMillis;
-            }
-
-            final long elapsedRealtime = currentTimeMillis - lastTimestampRecorded;
-            // realTimestampPeriod: how many times MAX_TIMESTAMP passed
-            long realTimestampPeriod = (lastTimestamp + elapsedRealtime) / MAX_TIMESTAMP;
-            if (realTimestampPeriod > 0 && timestamp > 7000) {
-                realTimestampPeriod--;
-            }
-            final long lastTimestampStarted = lastTimestampRecorded - lastTimestamp;
-            // result: time to wait
-            final long result = BUFFER_LENGTH_MILLIS // buffer
-                    + lastTimestampStarted + realTimestampPeriod * MAX_TIMESTAMP + timestamp // time to fire event
-                    - currentTimeMillis; // current time
-
-            lastTimestamp = timestamp;
-            lastTimestampRecorded = currentTimeMillis;
-            return result;
-        }
-
-        private MidiEventWithTiming(int arg1, int arg2, int arg3, byte[] array, int timestamp) {
-            this.arg1 = arg1;
-            this.arg2 = arg2;
-            this.arg3 = arg3;
-            this.array = array;
-            timing = calculateEventFireTime(timestamp);
-        }
-
-        /**
-         * Constructor with no arguments
-         *
-         * @param timestamp BLE MIDI timestamp
-         */
-        MidiEventWithTiming(int timestamp) {
-            this(INVALID, INVALID, INVALID, null, timestamp);
-        }
-
-        /**
-         * Constructor with 1 argument
-         *
-         * @param arg1      argument 1
-         * @param timestamp BLE MIDI timestamp
-         */
-        MidiEventWithTiming(int arg1, int timestamp) {
-            this(arg1, INVALID, INVALID, null, timestamp);
-        }
-
-        /**
-         * Constructor with 2 arguments
-         *
-         * @param arg1      argument 1
-         * @param arg2      argument 2
-         * @param timestamp BLE MIDI timestamp
-         */
-        MidiEventWithTiming(int arg1, int arg2, int timestamp) {
-            this(arg1, arg2, INVALID, null, timestamp);
-        }
-
-        /**
-         * Constructor with 3 arguments
-         *
-         * @param arg1      argument 1
-         * @param arg2      argument 2
-         * @param arg3      argument 3
-         * @param timestamp BLE MIDI timestamp
-         */
-        MidiEventWithTiming(int arg1, int arg2, int arg3, int timestamp) {
-            this(arg1, arg2, arg3, null, timestamp);
-        }
-
-        /**
-         * Constructor with array
-         *
-         * @param array     data
-         * @param timestamp BLE MIDI timestamp
-         */
-        MidiEventWithTiming(@NonNull byte[] array, int timestamp) {
-            this(INVALID, INVALID, INVALID, array, timestamp);
-        }
-
-        public long getTiming() {
-            return timing;
-        }
-
-        public int getArg1() {
-            return arg1;
-        }
-
-        public int getArg2() {
-            return arg2;
-        }
-
-        public int getArg3() {
-            return arg3;
-        }
-
-        public byte[] getArray() {
-            return array;
         }
     }
 
@@ -798,8 +621,6 @@ public final class BleMidiParser {
         }
     }
 
-    private final Collection<MidiEventWithTiming> queuedEventList = new ArrayList<>();
-
     /**
      * Add a event to event queue
      *
@@ -813,12 +634,181 @@ public final class BleMidiParser {
     }
 
     /**
+     * {@link Runnable} with MIDI event data, and firing timing
+     */
+    private abstract class MidiEventWithTiming implements Runnable {
+        private static final int INVALID = -1;
+
+        private final long timing;
+        private final int arg1;
+        private final int arg2;
+        private final int arg3;
+        private final byte[] array;
+
+        private MidiEventWithTiming(int arg1, int arg2, int arg3, byte[] array, int timestamp) {
+            this.arg1 = arg1;
+            this.arg2 = arg2;
+            this.arg3 = arg3;
+            this.array = array;
+            timing = calculateEventFireTime(timestamp);
+        }
+
+        /**
+         * Constructor with no arguments
+         *
+         * @param timestamp BLE MIDI timestamp
+         */
+        MidiEventWithTiming(int timestamp) {
+            this(INVALID, INVALID, INVALID, null, timestamp);
+        }
+
+        /**
+         * Constructor with 1 argument
+         *
+         * @param arg1      argument 1
+         * @param timestamp BLE MIDI timestamp
+         */
+        MidiEventWithTiming(int arg1, int timestamp) {
+            this(arg1, INVALID, INVALID, null, timestamp);
+        }
+
+        /**
+         * Constructor with 2 arguments
+         *
+         * @param arg1      argument 1
+         * @param arg2      argument 2
+         * @param timestamp BLE MIDI timestamp
+         */
+        MidiEventWithTiming(int arg1, int arg2, int timestamp) {
+            this(arg1, arg2, INVALID, null, timestamp);
+        }
+
+        /**
+         * Constructor with 3 arguments
+         *
+         * @param arg1      argument 1
+         * @param arg2      argument 2
+         * @param arg3      argument 3
+         * @param timestamp BLE MIDI timestamp
+         */
+        MidiEventWithTiming(int arg1, int arg2, int arg3, int timestamp) {
+            this(arg1, arg2, arg3, null, timestamp);
+        }
+
+        /**
+         * Constructor with array
+         *
+         * @param array     data
+         * @param timestamp BLE MIDI timestamp
+         */
+        MidiEventWithTiming(@NonNull byte[] array, int timestamp) {
+            this(INVALID, INVALID, INVALID, array, timestamp);
+        }
+
+        /**
+         * Calculate `time to wait` for the event's timestamp
+         *
+         * @param timestamp the event's timestamp
+         * @return time to wait
+         */
+        private long calculateEventFireTime(final int timestamp) {
+            final long currentTimeMillis = System.currentTimeMillis();
+
+            // checks timestamp value is always zero
+            if (isTimestampAlwaysZero != null) {
+                if (isTimestampAlwaysZero) {
+                    if (timestamp != 0) {
+                        // timestamp comes with non-zero. prevent misdetection
+                        isTimestampAlwaysZero = false;
+                        zeroTimestampCount = 0;
+                        lastTimestampRecorded = 0;
+                    } else {
+                        // event fires immediately
+                        return currentTimeMillis;
+                    }
+                } else {
+                    if (timestamp == 0) {
+                        // recheck timestamp value on next time
+                        isTimestampAlwaysZero = null;
+                        zeroTimestampCount = 0;
+                        // event fires immediately
+                        return currentTimeMillis;
+                    }
+                }
+            } else {
+                if (timestamp == 0) {
+                    if (zeroTimestampCount >= 3) {
+                        // decides timestamp is always zero
+                        isTimestampAlwaysZero = true;
+                    } else {
+                        zeroTimestampCount++;
+                    }
+                    // event fires immediately
+                    return currentTimeMillis;
+                } else {
+                    isTimestampAlwaysZero = false;
+                    zeroTimestampCount = 0;
+                    lastTimestampRecorded = 0;
+                }
+            }
+
+            if (lastTimestampRecorded == 0) {
+                // first time: event fires immediately
+                lastTimestamp = timestamp;
+                lastTimestampRecorded = currentTimeMillis;
+                return currentTimeMillis;
+            }
+
+            if (currentTimeMillis - lastTimestampRecorded >= MAX_TIMESTAMP) {
+                // the event comes after long pause
+                lastTimestamp = timestamp;
+                lastTimestampRecorded = currentTimeMillis;
+                return currentTimeMillis;
+            }
+
+            final long elapsedRealtime = currentTimeMillis - lastTimestampRecorded;
+            // realTimestampPeriod: how many times MAX_TIMESTAMP passed
+            long realTimestampPeriod = (lastTimestamp + elapsedRealtime) / MAX_TIMESTAMP;
+            if (realTimestampPeriod > 0 && timestamp > 7000) {
+                realTimestampPeriod--;
+            }
+            final long lastTimestampStarted = lastTimestampRecorded - lastTimestamp;
+            // result: time to wait
+            final long result = BUFFER_LENGTH_MILLIS // buffer
+                    + lastTimestampStarted + realTimestampPeriod * MAX_TIMESTAMP + timestamp // time to fire event
+                    - currentTimeMillis; // current time
+
+            lastTimestamp = timestamp;
+            lastTimestampRecorded = currentTimeMillis;
+            return result;
+        }
+
+        public long getTiming() {
+            return timing;
+        }
+
+        public int getArg1() {
+            return arg1;
+        }
+
+        public int getArg2() {
+            return arg2;
+        }
+
+        public int getArg3() {
+            return arg3;
+        }
+
+        public byte[] getArray() {
+            return array;
+        }
+    }
+
+    /**
      * Runnable for MIDI event queueing
      */
     private class EventDequeueRunnable implements Runnable {
-        private volatile boolean isRunning = true;
         private final List<MidiEventWithTiming> dequeuedEvents = new ArrayList<>();
-
         private final Comparator<MidiEventWithTiming> midiTimerTaskComparator = new Comparator<MidiEventWithTiming>() {
             @Override
             public int compare(final MidiEventWithTiming lhs, final MidiEventWithTiming rhs) {
@@ -870,6 +860,7 @@ public final class BleMidiParser {
                 return -(lhsInt - rhsInt);
             }
         };
+        private volatile boolean isRunning = true;
 
         @Override
         public void run() {

@@ -21,9 +21,10 @@ import android.content.pm.FeatureInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
+import android.util.Log;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import android.util.Log;
 
 import java.util.List;
 import java.util.Set;
@@ -46,8 +47,6 @@ public final class BleMidiCentralProvider {
     private final Context context;
     private final Handler handler;
     private final BleMidiCallback midiCallback;
-    private boolean useCompanionDeviceSetup;
-
     /**
      * Callback for BLE device scanning
      */
@@ -82,20 +81,14 @@ public final class BleMidiCentralProvider {
             }
         }
     };
-
-    /**
-     * Connect to Bluetooth LE device
-     * @param bluetoothDevice the BluetoothDevice
-     */
-    @SuppressLint("MissingPermission")
-    public void connectGatt(BluetoothDevice bluetoothDevice) {
-        bluetoothDevice.connectGatt(context, true, midiCallback);
-    }
-
     /**
      * Callback for BLE device scanning (for Lollipop or later)
      */
     private final ScanCallback scanCallback;
+    private boolean useCompanionDeviceSetup;
+    private volatile boolean isScanning = false;
+    private Runnable stopScanRunnable = null;
+    private OnMidiScanStatusListener onMidiScanStatusListener;
 
     /**
      * Constructor<br />
@@ -105,7 +98,7 @@ public final class BleMidiCentralProvider {
      */
     @SuppressLint("NewApi")
     public BleMidiCentralProvider(@NonNull final Context context) throws UnsupportedOperationException, SecurityException {
-        if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE) == false) {
+        if (!context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
             throw new UnsupportedOperationException("Bluetooth LE not supported on this device.");
         }
 
@@ -131,7 +124,7 @@ public final class BleMidiCentralProvider {
             throw new UnsupportedOperationException("Bluetooth is not available.");
         }
 
-        if (bluetoothAdapter.isEnabled() == false) {
+        if (!bluetoothAdapter.isEnabled()) {
             throw new UnsupportedOperationException("Bluetooth is disabled.");
         }
 
@@ -182,7 +175,15 @@ public final class BleMidiCentralProvider {
         }
     }
 
-    private volatile boolean isScanning = false;
+    /**
+     * Connect to Bluetooth LE device
+     *
+     * @param bluetoothDevice the BluetoothDevice
+     */
+    @SuppressLint("MissingPermission")
+    public void connectGatt(BluetoothDevice bluetoothDevice) {
+        bluetoothDevice.connectGatt(context, true, midiCallback);
+    }
 
     /**
      * Set if the Bluetooth LE device need `Pairing` <br />
@@ -199,14 +200,12 @@ public final class BleMidiCentralProvider {
         midiCallback.setNeedsBonding(needsPairing);
     }
 
-    private Runnable stopScanRunnable = null;
-
     /**
      * Starts to scan devices
      *
      * @param timeoutInMilliSeconds 0 or negative value : no timeout
      */
-    @SuppressLint({ "Deprecation", "NewApi" })
+    @SuppressLint({"Deprecation", "NewApi"})
     public void startScanDevice(int timeoutInMilliSeconds) throws SecurityException {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && useCompanionDeviceSetup) {
             final CompanionDeviceManager deviceManager = context.getSystemService(CompanionDeviceManager.class);
@@ -279,7 +278,7 @@ public final class BleMidiCentralProvider {
     /**
      * Stops to scan devices
      */
-    @SuppressLint({ "Deprecation", "NewApi" })
+    @SuppressLint({"Deprecation", "NewApi"})
     public void stopScanDevice() throws SecurityException {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && useCompanionDeviceSetup) {
@@ -344,8 +343,6 @@ public final class BleMidiCentralProvider {
     public Set<MidiOutputDevice> getMidiOutputDevices() {
         return midiCallback.getMidiOutputDevices();
     }
-
-    private OnMidiScanStatusListener onMidiScanStatusListener;
 
     /**
      * Set the listener of device scanning status

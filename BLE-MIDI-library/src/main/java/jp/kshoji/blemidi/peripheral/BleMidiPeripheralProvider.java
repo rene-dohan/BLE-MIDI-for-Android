@@ -70,22 +70,146 @@ public abstract class BleMidiPeripheralProvider {
     private static final UUID DESCRIPTOR_CLIENT_CHARACTERISTIC_CONFIGURATION = BleUuidUtils.fromShortValue(0x2902);
 
     private static final int DEVICE_NAME_MAX_LENGTH = 100;
-
+    public final BluetoothGattCharacteristic midiCharacteristic;
+    public final Map<String, MidiInputDevice> midiInputDevicesMap = new HashMap<>();
+    public final Map<String, MidiOutputDevice> midiOutputDevicesMap = new HashMap<>();
+    public final Map<String, BluetoothDevice> bluetoothDevicesMap = new HashMap<>();
     private final Context context;
     private final BluetoothManager bluetoothManager;
     private final BluetoothLeAdvertiser bluetoothLeAdvertiser;
     private final BluetoothGattService informationGattService;
     private final BluetoothGattService midiGattService;
-    public final BluetoothGattCharacteristic midiCharacteristic;
+    /**
+     * Callback for BLE connection<br />
+     * nothing to do.
+     */
+    private final AdvertiseCallback advertiseCallback = new AdvertiseCallback() {
+    };
+    /**
+     * callback for disconnecting a bluetooth device
+     */
+    private final BluetoothGattCallback disconnectCallback = new BluetoothGattCallback() {
+        @Override
+        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) throws SecurityException {
+            super.onConnectionStateChange(gatt, status, newState);
+            Log.d(Constants.TAG, "onConnectionStateChange status: " + status + ", newState: " + newState);
+            // disconnect the device
+            if (gatt != null) {
+                gatt.disconnect();
+            }
+        }
+    };
     public BluetoothGattServer gattServer;
     private boolean gattServiceInitialized = false;
-
-    public final Map<String, MidiInputDevice> midiInputDevicesMap = new HashMap<>();
-    public final Map<String, MidiOutputDevice> midiOutputDevicesMap = new HashMap<>();
-    public final Map<String, BluetoothDevice> bluetoothDevicesMap = new HashMap<>();
-
     private String manufacturer = "kshoji.jp";
     private String deviceName = "BLE MIDI";
+    /**
+     * Callback for BLE data transfer
+     */
+    final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
+
+        @Override
+        public void onMtuChanged(BluetoothDevice device, int mtu) {
+            super.onMtuChanged(device, mtu);
+
+            synchronized (midiOutputDevicesMap) {
+                MidiOutputDevice midiOutputDevice = midiOutputDevicesMap.get(device.getAddress());
+                if (midiOutputDevice != null) {
+                    ((InternalMidiOutputDevice) midiOutputDevice).setBufferSize(mtu < 23 ? 20 : mtu - 3);
+                }
+            }
+            Log.d(Constants.TAG, "Peripheral onMtuChanged address: " + device.getAddress() + ", mtu: " + mtu);
+        }
+
+        @Override
+        public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
+            super.onConnectionStateChange(device, status, newState);
+
+            switch (newState) {
+                case BluetoothProfile.STATE_CONNECTED:
+                    onDeviceConnected(device);
+                    break;
+
+                case BluetoothProfile.STATE_DISCONNECTED:
+                    onDeviceDisconnected(device);
+                    break;
+            }
+        }
+
+        @Override
+        public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) throws SecurityException {
+            super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
+
+            UUID characteristicUuid = characteristic.getUuid();
+
+            if (BleUuidUtils.matches(CHARACTERISTIC_BLE_MIDI, characteristicUuid)) {
+                // send empty
+                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
+            } else {
+                switch (BleUuidUtils.toShortValue(characteristicUuid)) {
+                    case MODEL_NUMBER:
+                        gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, deviceName.getBytes(StandardCharsets.UTF_8));
+                        break;
+                    case MANUFACTURER_NAME:
+                        gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, manufacturer.getBytes(StandardCharsets.UTF_8));
+                        break;
+                    default:
+                        // send empty
+                        gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
+                        break;
+                }
+            }
+        }
+
+        @Override
+        public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) throws SecurityException {
+            super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
+
+            if (BleUuidUtils.matches(characteristic.getUuid(), CHARACTERISTIC_BLE_MIDI)) {
+                MidiInputDevice midiInputDevice = midiInputDevicesMap.get(device.getAddress());
+
+                if (midiInputDevice != null) {
+                    ((InternalMidiInputDevice) midiInputDevice).incomingData(value);
+                }
+
+                if (responseNeeded) {
+                    // send empty
+                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
+                }
+            }
+        }
+
+        @Override
+        public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) throws SecurityException {
+            super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value);
+
+            byte[] descriptorValue = descriptor.getValue();
+            try {
+                System.arraycopy(value, 0, descriptorValue, offset, value.length);
+                descriptor.setValue(descriptorValue);
+            } catch (IndexOutOfBoundsException ignored) {
+            }
+
+            gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
+        }
+
+        @Override
+        public void onDescriptorReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattDescriptor descriptor) throws SecurityException {
+            super.onDescriptorReadRequest(device, requestId, offset, descriptor);
+
+            if (offset == 0) {
+                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, descriptor.getValue());
+            } else {
+                final byte[] value = descriptor.getValue();
+                byte[] result = new byte[value.length - offset];
+                try {
+                    System.arraycopy(value, offset, result, 0, result.length);
+                } catch (IndexOutOfBoundsException ignored) {
+                }
+                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, result);
+            }
+        }
+    };
 
     /**
      * Constructor<br />
@@ -218,13 +342,6 @@ public abstract class BleMidiPeripheralProvider {
     }
 
     /**
-     * Callback for BLE connection<br />
-     * nothing to do.
-     */
-    private final AdvertiseCallback advertiseCallback = new AdvertiseCallback() {
-    };
-
-    /**
      * Disconnects the specified device
      *
      * @param midiOutputDevice the device
@@ -236,21 +353,6 @@ public abstract class BleMidiPeripheralProvider {
 
         disconnectByDeviceAddress(midiOutputDevice.getDeviceAddress());
     }
-
-    /**
-     * callback for disconnecting a bluetooth device
-     */
-    private final BluetoothGattCallback disconnectCallback = new BluetoothGattCallback() {
-        @Override
-        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) throws SecurityException {
-            super.onConnectionStateChange(gatt, status, newState);
-            Log.d(Constants.TAG, "onConnectionStateChange status: " + status + ", newState: " + newState);
-            // disconnect the device
-            if (gatt != null) {
-                gatt.disconnect();
-            }
-        }
-    };
 
     /**
      * Disconnects the device by its address
@@ -308,114 +410,6 @@ public abstract class BleMidiPeripheralProvider {
             midiOutputDevicesMap.clear();
         }
     }
-
-    /**
-     * Callback for BLE data transfer
-     */
-    final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
-
-        @Override
-        public void onMtuChanged(BluetoothDevice device, int mtu) {
-            super.onMtuChanged(device, mtu);
-
-            synchronized (midiOutputDevicesMap) {
-                MidiOutputDevice midiOutputDevice = midiOutputDevicesMap.get(device.getAddress());
-                if (midiOutputDevice != null) {
-                    ((InternalMidiOutputDevice) midiOutputDevice).setBufferSize(mtu < 23 ? 20 : mtu - 3);
-                }
-            }
-            Log.d(Constants.TAG, "Peripheral onMtuChanged address: " + device.getAddress() + ", mtu: " + mtu);
-        }
-
-        @Override
-        public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
-            super.onConnectionStateChange(device, status, newState);
-
-            switch (newState) {
-                case BluetoothProfile.STATE_CONNECTED:
-                    onDeviceConnected(device);
-                    break;
-
-                case BluetoothProfile.STATE_DISCONNECTED:
-                    onDeviceDisconnected(device);
-                    break;
-            }
-        }
-
-        @Override
-        public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) throws SecurityException {
-            super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
-
-            UUID characteristicUuid = characteristic.getUuid();
-
-            if (BleUuidUtils.matches(CHARACTERISTIC_BLE_MIDI, characteristicUuid)) {
-                // send empty
-                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
-            } else {
-                switch (BleUuidUtils.toShortValue(characteristicUuid)) {
-                    case MODEL_NUMBER:
-                        gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, deviceName.getBytes(StandardCharsets.UTF_8));
-                        break;
-                    case MANUFACTURER_NAME:
-                        gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, manufacturer.getBytes(StandardCharsets.UTF_8));
-                        break;
-                    default:
-                        // send empty
-                        gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
-                        break;
-                }
-            }
-        }
-
-        @Override
-        public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) throws SecurityException {
-            super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
-
-            if (BleUuidUtils.matches(characteristic.getUuid(), CHARACTERISTIC_BLE_MIDI)) {
-                MidiInputDevice midiInputDevice = midiInputDevicesMap.get(device.getAddress());
-
-                if (midiInputDevice != null) {
-                    ((InternalMidiInputDevice) midiInputDevice).incomingData(value);
-                }
-
-                if (responseNeeded) {
-                    // send empty
-                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
-                }
-            }
-        }
-
-        @Override
-        public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) throws SecurityException {
-            super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value);
-
-            byte[] descriptorValue = descriptor.getValue();
-            try {
-                System.arraycopy(value, 0, descriptorValue, offset, value.length);
-                descriptor.setValue(descriptorValue);
-            } catch (IndexOutOfBoundsException ignored) {
-            }
-
-            gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
-        }
-
-        @Override
-        public void onDescriptorReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattDescriptor descriptor) throws SecurityException {
-            super.onDescriptorReadRequest(device, requestId, offset, descriptor);
-
-            if (offset == 0) {
-                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, descriptor.getValue());
-            } else {
-                final byte[] value = descriptor.getValue();
-                byte[] result = new byte[value.length - offset];
-                try {
-                    System.arraycopy(value, offset, result, 0, result.length);
-                } catch (IndexOutOfBoundsException ignored) {
-                }
-                gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, result);
-            }
-        }
-    };
 
     protected abstract void onDeviceConnected(@NonNull BluetoothDevice device);
 

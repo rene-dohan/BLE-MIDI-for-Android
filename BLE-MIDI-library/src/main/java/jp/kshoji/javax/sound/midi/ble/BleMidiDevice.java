@@ -33,7 +33,7 @@ public final class BleMidiDevice implements MidiDevice {
     /**
      * Constructor
      *
-     * @param midiInputDevice the input device
+     * @param midiInputDevice  the input device
      * @param midiOutputDevice the output device
      */
     public BleMidiDevice(@Nullable final MidiInputDevice midiInputDevice, @Nullable final MidiOutputDevice midiOutputDevice) {
@@ -164,6 +164,10 @@ public final class BleMidiDevice implements MidiDevice {
         return Collections.unmodifiableList(transmitters);
     }
 
+    public MidiInputDevice getMidiInputDevice() {
+        return midiInputDevice;
+    }
+
     public void setMidiInputDevice(@Nullable final MidiInputDevice midiInputDevice) {
         this.midiInputDevice = midiInputDevice;
         if (transmitter != null) {
@@ -177,8 +181,8 @@ public final class BleMidiDevice implements MidiDevice {
         }
     }
 
-    public MidiInputDevice getMidiInputDevice() {
-        return midiInputDevice;
+    public MidiOutputDevice getMidiOutputDevice() {
+        return midiOutputDevice;
     }
 
     public void setMidiOutputDevice(@Nullable final MidiOutputDevice midiOutputDevice) {
@@ -192,10 +196,6 @@ public final class BleMidiDevice implements MidiDevice {
         } else {
             receiver = new BleMidiReceiver(this);
         }
-    }
-
-    public MidiOutputDevice getMidiOutputDevice() {
-        return midiOutputDevice;
     }
 
 }

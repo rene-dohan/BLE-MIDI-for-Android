@@ -1,7 +1,8 @@
 package jp.kshoji.javax.sound.midi.ble;
 
-import androidx.annotation.NonNull;
 import android.util.Log;
+
+import androidx.annotation.NonNull;
 
 import jp.kshoji.blemidi.device.MidiInputDevice;
 import jp.kshoji.blemidi.listener.OnMidiInputEventListener;
@@ -39,13 +40,13 @@ public final class BleMidiTransmitter implements MidiDeviceTransmitter, OnMidiIn
     }
 
     @Override
-    public void setReceiver(Receiver receiver) {
-        this.receiver = receiver;
+    public Receiver getReceiver() {
+        return receiver;
     }
 
     @Override
-    public Receiver getReceiver() {
-        return receiver;
+    public void setReceiver(Receiver receiver) {
+        this.receiver = receiver;
     }
 
     public void open() {

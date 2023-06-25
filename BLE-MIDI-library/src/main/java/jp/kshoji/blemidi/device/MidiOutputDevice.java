@@ -15,43 +15,8 @@ public abstract class MidiOutputDevice {
     public static final int MAX_TIMESTAMP = 8192;
 
     final ByteArrayOutputStream transferDataStream = new ByteArrayOutputStream();
-
-    /**
-     * Transfer data
-     *
-     * @param writeBuffer byte array to write
-     */
-    protected abstract void transferData(@NonNull byte[] writeBuffer);
-
-    /**
-     * Obtains the device name
-     *
-     * @return device name
-     */
-    @NonNull
-    public abstract String getDeviceName();
-
-    /**
-     * Obtains the device address
-     *
-     * @return device address
-     */
-    @NonNull
-    public abstract String getDeviceAddress();
-
-    /**
-     * Obtains buffer size
-     * @return buffer size
-     */
-    public abstract int getBufferSize();
-
-    @NonNull
-    @Override
-    public final String toString() {
-        return getDeviceName();
-    }
-
     volatile boolean transferDataThreadAlive;
+    transient int writtenDataCount;
     final Thread transferDataThread = new Thread(new Runnable() {
         @Override
         public void run() {
@@ -79,13 +44,48 @@ public abstract class MidiOutputDevice {
     }
 
     /**
+     * Transfer data
+     *
+     * @param writeBuffer byte array to write
+     */
+    protected abstract void transferData(@NonNull byte[] writeBuffer);
+
+    /**
+     * Obtains the device name
+     *
+     * @return device name
+     */
+    @NonNull
+    public abstract String getDeviceName();
+
+    /**
+     * Obtains the device address
+     *
+     * @return device address
+     */
+    @NonNull
+    public abstract String getDeviceAddress();
+
+    /**
+     * Obtains buffer size
+     *
+     * @return buffer size
+     */
+    public abstract int getBufferSize();
+
+    @NonNull
+    @Override
+    public final String toString() {
+        return getDeviceName();
+    }
+
+    /**
      * Stops transfer thread
      */
     public void stop() {
         transferDataThreadAlive = false;
     }
 
-    transient int writtenDataCount;
     private void storeTransferData(byte[] data) {
         synchronized (transferDataStream) {
             long timestamp = System.currentTimeMillis() % MAX_TIMESTAMP;
@@ -111,7 +111,7 @@ public abstract class MidiOutputDevice {
      * @param byte1 the first byte
      */
     private void sendMidiMessage(int byte1) {
-        storeTransferData(new byte[] { (byte) byte1 });
+        storeTransferData(new byte[]{(byte) byte1});
     }
 
     /**
@@ -121,7 +121,7 @@ public abstract class MidiOutputDevice {
      * @param byte2 the second byte
      */
     private void sendMidiMessage(int byte1, int byte2) {
-        storeTransferData(new byte[] { (byte) byte1, (byte) byte2 });
+        storeTransferData(new byte[]{(byte) byte1, (byte) byte2});
     }
 
     /**
@@ -132,7 +132,7 @@ public abstract class MidiOutputDevice {
      * @param byte3 the third byte
      */
     private void sendMidiMessage(int byte1, int byte2, int byte3) {
-        storeTransferData(new byte[] { (byte) byte1, (byte) byte2, (byte) byte3 });
+        storeTransferData(new byte[]{(byte) byte1, (byte) byte2, (byte) byte3});
     }
 
     /**
@@ -180,8 +180,8 @@ public abstract class MidiOutputDevice {
     /**
      * Note-off
      *
-     * @param channel 0-15
-     * @param note 0-127
+     * @param channel  0-15
+     * @param note     0-127
      * @param velocity 0-127
      */
     public final void sendMidiNoteOff(int channel, int note, int velocity) {
@@ -191,8 +191,8 @@ public abstract class MidiOutputDevice {
     /**
      * Note-on
      *
-     * @param channel 0-15
-     * @param note 0-127
+     * @param channel  0-15
+     * @param note     0-127
      * @param velocity 0-127
      */
     public final void sendMidiNoteOn(int channel, int note, int velocity) {
@@ -202,8 +202,8 @@ public abstract class MidiOutputDevice {
     /**
      * Poly-KeyPress
      *
-     * @param channel 0-15
-     * @param note 0-127
+     * @param channel  0-15
+     * @param note     0-127
      * @param pressure 0-127
      */
     public final void sendMidiPolyphonicAftertouch(int channel, int note, int pressure) {
@@ -213,9 +213,9 @@ public abstract class MidiOutputDevice {
     /**
      * Control Change
      *
-     * @param channel 0-15
+     * @param channel  0-15
      * @param function 0-127
-     * @param value 0-127
+     * @param value    0-127
      */
     public final void sendMidiControlChange(int channel, int function, int value) {
         sendMidiMessage(0xb0 | (channel & 0xf), function, value);
@@ -234,7 +234,7 @@ public abstract class MidiOutputDevice {
     /**
      * Channel Pressure
      *
-     * @param channel 0-15
+     * @param channel  0-15
      * @param pressure 0-127
      */
     public final void sendMidiChannelAftertouch(int channel, int pressure) {
@@ -245,7 +245,7 @@ public abstract class MidiOutputDevice {
      * PitchBend Change
      *
      * @param channel 0-15
-     * @param amount 0(low)-8192(center)-16383(high)
+     * @param amount  0(low)-8192(center)-16383(high)
      */
     public final void sendMidiPitchWheel(int channel, int amount) {
         sendMidiMessage(0xe0 | (channel & 0xf), amount & 0x7f, (amount >> 7) & 0x7f);
@@ -330,9 +330,9 @@ public abstract class MidiOutputDevice {
     /**
      * RPN message
      *
-     * @param channel 0-15
+     * @param channel  0-15
      * @param function 14bits
-     * @param value 7bits or 14bits
+     * @param value    7bits or 14bits
      */
     public final void sendRPNMessage(int channel, int function, int value) {
         sendRPNMessage(channel, (function >> 7) & 0x7f, function & 0x7f, value);
@@ -341,10 +341,10 @@ public abstract class MidiOutputDevice {
     /**
      * RPN message
      *
-     * @param channel 0-15
+     * @param channel     0-15
      * @param functionMSB higher 7bits
      * @param functionLSB lower 7bits
-     * @param value 7bits or 14bits
+     * @param value       7bits or 14bits
      */
     public final void sendRPNMessage(int channel, int functionMSB, int functionLSB, int value) {
         // send the function
@@ -367,9 +367,9 @@ public abstract class MidiOutputDevice {
     /**
      * NRPN message
      *
-     * @param channel 0-15
+     * @param channel  0-15
      * @param function 14bits
-     * @param value 7bits or 14bits
+     * @param value    7bits or 14bits
      */
     public final void sendNRPNMessage(int channel, int function, int value) {
         sendNRPNMessage(channel, (function >> 7) & 0x7f, function & 0x7f, value);
@@ -378,10 +378,10 @@ public abstract class MidiOutputDevice {
     /**
      * NRPN message
      *
-     * @param channel 0-15
+     * @param channel     0-15
      * @param functionMSB higher 7bits
      * @param functionLSB lower 7bits
-     * @param value 7bits or 14bits
+     * @param value       7bits or 14bits
      */
     public final void sendNRPNMessage(int channel, int functionMSB, int functionLSB, int value) {
         // send the function

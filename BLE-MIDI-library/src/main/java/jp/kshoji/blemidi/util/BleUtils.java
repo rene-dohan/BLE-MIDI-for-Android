@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+
 import androidx.annotation.NonNull;
 
 /**
@@ -18,6 +19,15 @@ import androidx.annotation.NonNull;
 public class BleUtils {
 
     /**
+     * Request code for bluetooth enabling
+     */
+    public static final int REQUEST_CODE_BLUETOOTH_ENABLE = 0xb1e;
+    /**
+     * Request code for BLE MIDI device selection
+     */
+    public static final int SELECT_DEVICE_REQUEST_CODE = 0x5e1ec7;
+
+    /**
      * Check if Bluetooth LE device supported on the running environment.
      *
      * @param context the context
@@ -25,7 +35,7 @@ public class BleUtils {
      */
     public static boolean isBleSupported(@NonNull final Context context) {
         try {
-            if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE) == false) {
+            if (!context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
                 return false;
             }
 
@@ -53,7 +63,7 @@ public class BleUtils {
             return false;
         }
 
-        final BluetoothAdapter bluetoothAdapter =  ((BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE)).getAdapter();
+        final BluetoothAdapter bluetoothAdapter = ((BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE)).getAdapter();
 
         if (bluetoothAdapter == null) {
             return false;
@@ -82,16 +92,6 @@ public class BleUtils {
 
         return bluetoothAdapter.isEnabled();
     }
-
-    /**
-     * Request code for bluetooth enabling
-     */
-    public static final int REQUEST_CODE_BLUETOOTH_ENABLE = 0xb1e;
-
-    /**
-     * Request code for BLE MIDI device selection
-     */
-    public static final int SELECT_DEVICE_REQUEST_CODE = 0x5e1ec7;
 
     /**
      * Enables bluetooth function.<br />

@@ -7,7 +7,7 @@ import jp.kshoji.blemidi.device.MidiOutputDevice;
 
 /**
  * Listener for MIDI attached events
- * 
+ *
  * @author K.Shoji
  */
 public interface OnMidiDeviceAttachedListener {

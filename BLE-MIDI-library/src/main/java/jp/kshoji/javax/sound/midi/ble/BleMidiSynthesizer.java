@@ -177,6 +177,16 @@ public class BleMidiSynthesizer implements Synthesizer {
         return bleMidiDevice.getReceiver();
     }
 
+    public void setReceiver(final Receiver receiver) {
+        // 16 channels
+        voiceStatuses = new VoiceStatus[16];
+        channels = new MidiChannel[16];
+        for (int channel = 0; channel < 16; channel++) {
+            voiceStatuses[channel] = new VoiceStatus();
+            channels[channel] = new MidiChannelImpl(channel, receiver, voiceStatuses[channel]);
+        }
+    }
+
     @NonNull
     @Override
     public List<Receiver> getReceivers() {
@@ -193,15 +203,5 @@ public class BleMidiSynthesizer implements Synthesizer {
     @Override
     public List<Transmitter> getTransmitters() {
         return bleMidiDevice.getTransmitters();
-    }
-
-    public void setReceiver(final Receiver receiver) {
-        // 16 channels
-        voiceStatuses = new VoiceStatus[16];
-        channels = new MidiChannel[16];
-        for (int channel = 0; channel < 16; channel++) {
-            voiceStatuses[channel] = new VoiceStatus();
-            channels[channel] = new MidiChannelImpl(channel, receiver, voiceStatuses[channel]);
-        }
     }
 }
