@@ -1,8 +1,9 @@
 package jp.kshoji.blemidi.util;
 
+import android.util.SparseIntArray;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import android.util.SparseIntArray;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -220,7 +221,7 @@ public final class BleMidiParser {
         /**
          * Constructor with 1 argument
          *
-         * @param arg1 argument 1
+         * @param arg1      argument 1
          * @param timestamp BLE MIDI timestamp
          */
         MidiEventWithTiming(int arg1, int timestamp) {
@@ -230,8 +231,8 @@ public final class BleMidiParser {
         /**
          * Constructor with 2 arguments
          *
-         * @param arg1 argument 1
-         * @param arg2 argument 2
+         * @param arg1      argument 1
+         * @param arg2      argument 2
          * @param timestamp BLE MIDI timestamp
          */
         MidiEventWithTiming(int arg1, int arg2, int timestamp) {
@@ -241,19 +242,19 @@ public final class BleMidiParser {
         /**
          * Constructor with 3 arguments
          *
-         * @param arg1 argument 1
-         * @param arg2 argument 2
-         * @param arg3 argument 3
+         * @param arg1      argument 1
+         * @param arg2      argument 2
+         * @param arg3      argument 3
          * @param timestamp BLE MIDI timestamp
          */
         MidiEventWithTiming(int arg1, int arg2, int arg3, int timestamp) {
-            this (arg1, arg2, arg3, null, timestamp);
+            this(arg1, arg2, arg3, null, timestamp);
         }
 
         /**
          * Constructor with array
          *
-         * @param array data
+         * @param array     data
          * @param timestamp BLE MIDI timestamp
          */
         MidiEventWithTiming(@NonNull byte[] array, int timestamp) {
@@ -285,7 +286,7 @@ public final class BleMidiParser {
      * Parses MIDI events
      *
      * @param header the header bits
-     * @param event the event byte
+     * @param event  the event byte
      */
     private void parseMidiEvent(final int header, final byte event) {
         final int midiEvent = event & 0xff;
@@ -540,7 +541,7 @@ public final class BleMidiParser {
                             break;
                     }
                 }
-                    break;
+                break;
                 default:
                     // illegal state
                     midiState = MIDI_STATE_TIMESTAMP;
@@ -801,6 +802,7 @@ public final class BleMidiParser {
 
     /**
      * Add a event to event queue
+     *
      * @param event the MIDI Event
      */
     private void addEventToQueue(MidiEventWithTiming event) {
