@@ -411,9 +411,23 @@ public abstract class BleMidiPeripheralProvider {
         }
     }
 
-    protected abstract void onDeviceConnected(@NonNull BluetoothDevice device);
+    protected void onDeviceConnected(@NonNull BluetoothDevice device) {
+        synchronized (bluetoothDevicesMap) {
+            bluetoothDevicesMap.put(device.getAddress(), device);
+        }
+    }
 
-    protected abstract void onDeviceDisconnected(@NonNull BluetoothDevice device);
+    protected void onDeviceDisconnected(@NonNull BluetoothDevice device) {
+        synchronized (midiInputDevicesMap) {
+            midiInputDevicesMap.remove(device.getAddress());
+        }
+        synchronized (midiOutputDevicesMap) {
+            midiOutputDevicesMap.remove(device.getAddress());
+        }
+        synchronized (bluetoothDevicesMap) {
+            bluetoothDevicesMap.remove(device.getAddress());
+        }
+    }
 
     /**
      * Set the manufacturer name
