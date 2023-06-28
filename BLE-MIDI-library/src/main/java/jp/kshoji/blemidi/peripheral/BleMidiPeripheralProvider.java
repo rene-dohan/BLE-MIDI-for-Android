@@ -1,5 +1,6 @@
 package jp.kshoji.blemidi.peripheral;
 
+import static android.util.Log.w;
 import static java.lang.Thread.sleep;
 
 import android.annotation.SuppressLint;
@@ -48,6 +49,8 @@ import jp.kshoji.blemidi.util.Constants;
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
 @SuppressLint("MissingPermission")
 public abstract class BleMidiPeripheralProvider {
+
+    private boolean isAdvertisingStarted = false;
 
     /**
      * Gatt Services
@@ -111,7 +114,6 @@ public abstract class BleMidiPeripheralProvider {
         @Override
         public void onMtuChanged(BluetoothDevice device, int mtu) {
             super.onMtuChanged(device, mtu);
-
             synchronized (midiOutputDevicesMap) {
                 MidiOutputDevice midiOutputDevice = midiOutputDevicesMap.get(device.getAddress());
                 if (midiOutputDevice != null) {
@@ -124,7 +126,9 @@ public abstract class BleMidiPeripheralProvider {
         @Override
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
             super.onConnectionStateChange(device, status, newState);
-
+            synchronized (this) {
+                if (!isAdvertisingStarted) return;
+            }
             switch (newState) {
                 case BluetoothProfile.STATE_CONNECTED:
                     onDeviceConnected(device);
@@ -139,11 +143,8 @@ public abstract class BleMidiPeripheralProvider {
         @Override
         public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) throws SecurityException {
             super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
-
             UUID characteristicUuid = characteristic.getUuid();
-
             if (BleUuidUtils.matches(CHARACTERISTIC_BLE_MIDI, characteristicUuid)) {
-                // send empty
                 gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
             } else {
                 switch (BleUuidUtils.toShortValue(characteristicUuid)) {
@@ -154,7 +155,6 @@ public abstract class BleMidiPeripheralProvider {
                         gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, manufacturer.getBytes(StandardCharsets.UTF_8));
                         break;
                     default:
-                        // send empty
                         gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
                         break;
                 }
@@ -164,16 +164,12 @@ public abstract class BleMidiPeripheralProvider {
         @Override
         public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) throws SecurityException {
             super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
-
             if (BleUuidUtils.matches(characteristic.getUuid(), CHARACTERISTIC_BLE_MIDI)) {
                 MidiInputDevice midiInputDevice = midiInputDevicesMap.get(device.getAddress());
-
                 if (midiInputDevice != null) {
                     ((InternalMidiInputDevice) midiInputDevice).incomingData(value);
                 }
-
                 if (responseNeeded) {
-                    // send empty
                     gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
                 }
             }
@@ -182,21 +178,18 @@ public abstract class BleMidiPeripheralProvider {
         @Override
         public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) throws SecurityException {
             super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value);
-
             byte[] descriptorValue = descriptor.getValue();
             try {
                 System.arraycopy(value, 0, descriptorValue, offset, value.length);
                 descriptor.setValue(descriptorValue);
             } catch (IndexOutOfBoundsException ignored) {
             }
-
             gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, new byte[]{});
         }
 
         @Override
         public void onDescriptorReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattDescriptor descriptor) throws SecurityException {
             super.onDescriptorReadRequest(device, requestId, offset, descriptor);
-
             if (offset == 0) {
                 gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, descriptor.getValue());
             } else {
@@ -328,16 +321,22 @@ public abstract class BleMidiPeripheralProvider {
                 .build();
 
         bluetoothLeAdvertiser.startAdvertising(advertiseSettings, advertiseData, scanResult, advertiseCallback);
+        synchronized (this) {
+            isAdvertisingStarted = true;
+        }
     }
 
     /**
      * Stops advertising
      */
     public void stopAdvertising() throws SecurityException {
+        synchronized (this) {
+            isAdvertisingStarted = false;
+        }
         try {
             bluetoothLeAdvertiser.stopAdvertising(advertiseCallback);
-        } catch (IllegalStateException ignored) {
-            // BT Adapter is not turned ON
+        } catch (IllegalStateException ex) {
+            w("renetik-android-midi-bt", "bluetoothLeAdvertiser stopAdvertising", ex);
         }
     }
 
@@ -351,6 +350,13 @@ public abstract class BleMidiPeripheralProvider {
             return;
         }
 
+        disconnectByDeviceAddress(midiOutputDevice.getDeviceAddress());
+    }
+
+    public void disconnectDevice(@NonNull MidiInputDevice midiOutputDevice) {
+        if (!(midiOutputDevice instanceof InternalMidiInputDevice)) {
+            return;
+        }
         disconnectByDeviceAddress(midiOutputDevice.getDeviceAddress());
     }
 
