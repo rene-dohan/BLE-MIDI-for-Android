@@ -57,9 +57,6 @@ public class CentralCallback extends BluetoothGattCallback {
     @Override
     public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) throws SecurityException {
         super.onConnectionStateChange(gatt, status, newState);
-        // In this method, the `status` parameter shall be ignored.
-        // so, look `newState` parameter only.
-
         if (newState == BluetoothProfile.STATE_CONNECTED) {
             if (deviceAddressGattMap.containsKey(gatt.getDevice().getAddress())) {
                 return;
