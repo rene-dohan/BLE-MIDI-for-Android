@@ -27,17 +27,9 @@ final class CentralMidiInputDevice extends MidiInputDevice {
 
     private final BleMidiParser midiParser = new BleMidiParser(this);
 
-    /**
-     * Constructor for Central
-     *
-     * @param context       the context
-     * @param bluetoothGatt the gatt of device
-     * @throws IllegalArgumentException if specified gatt doesn't contain BLE MIDI service
-     */
     public CentralMidiInputDevice(@NonNull final Context context, @NonNull final BluetoothGatt bluetoothGatt) throws IllegalArgumentException, SecurityException {
         super();
         this.bluetoothGatt = bluetoothGatt;
-
         BluetoothGattService midiService = BleMidiDeviceUtils.getMidiService(context, bluetoothGatt);
         if (midiService == null) {
             List<UUID> uuidList = new ArrayList<>();
@@ -53,16 +45,10 @@ final class CentralMidiInputDevice extends MidiInputDevice {
         }
     }
 
-    /**
-     * Stops parser's thread
-     */
     void stop() {
         midiParser.stop();
     }
 
-    /**
-     * Configure the device as BLE Central
-     */
     public void configureAsCentralDevice() throws SecurityException {
         bluetoothGatt.setCharacteristicNotification(midiInputCharacteristic, true);
 
@@ -88,21 +74,11 @@ final class CentralMidiInputDevice extends MidiInputDevice {
         return bluetoothGatt.getDevice().getName();
     }
 
-    /**
-     * Obtains device address
-     *
-     * @return device address
-     */
     @NonNull
     public String getDeviceAddress() {
         return bluetoothGatt.getDevice().getAddress();
     }
 
-    /**
-     * Parse the MIDI data
-     *
-     * @param data the MIDI data
-     */
     void incomingData(@NonNull byte[] data) {
         midiParser.parse(data);
     }
