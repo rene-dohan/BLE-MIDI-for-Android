@@ -8,7 +8,7 @@ android {
     namespace "jp.kshoji.blemidi"
 
     defaultConfig {
-        minSdkVersion 18
+        minSdkVersion 24
         targetSdkVersion 33
     }
 

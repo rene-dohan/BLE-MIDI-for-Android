@@ -37,19 +37,12 @@ import jp.kshoji.blemidi.listener.OnMidiScanStatusListener;
 import jp.kshoji.blemidi.util.BleMidiDeviceUtils;
 import jp.kshoji.blemidi.util.Constants;
 
-/**
- * Client for BLE MIDI Peripheral device service
- *
- * @author K.Shoji
- */
-public final class BleMidiCentralProvider {
+@SuppressLint("MissingPermission")
+public class CentralProvider {
     private final BluetoothAdapter bluetoothAdapter;
     private final Context context;
     private final Handler handler;
-    private final BleMidiCallback midiCallback;
-    /**
-     * Callback for BLE device scanning
-     */
+    private final CentralCallback midiCallback;
     private final BluetoothAdapter.LeScanCallback leScanCallback = new BluetoothAdapter.LeScanCallback() {
         @Override
         public void onLeScan(final BluetoothDevice bluetoothDevice, int rssi, byte[] scanRecord) throws SecurityException {
@@ -81,23 +74,14 @@ public final class BleMidiCentralProvider {
             }
         }
     };
-    /**
-     * Callback for BLE device scanning (for Lollipop or later)
-     */
+
     private final ScanCallback scanCallback;
     private boolean useCompanionDeviceSetup;
     private volatile boolean isScanning = false;
     private Runnable stopScanRunnable = null;
     private OnMidiScanStatusListener onMidiScanStatusListener;
 
-    /**
-     * Constructor<br />
-     * Before constructing the instance, check the Bluetooth availability.
-     *
-     * @param context the context
-     */
-    @SuppressLint("NewApi")
-    public BleMidiCentralProvider(@NonNull final Context context) throws UnsupportedOperationException, SecurityException {
+    public CentralProvider(@NonNull final Context context) throws UnsupportedOperationException, SecurityException {
         if (!context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
             throw new UnsupportedOperationException("Bluetooth LE not supported on this device.");
         }
@@ -129,7 +113,7 @@ public final class BleMidiCentralProvider {
         }
 
         this.context = context;
-        this.midiCallback = new BleMidiCallback(context);
+        this.midiCallback = new CentralCallback(context);
         this.handler = new Handler(context.getMainLooper());
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -151,17 +135,17 @@ public final class BleMidiCentralProvider {
                                 ((Activity) context).runOnUiThread(new Runnable() {
                                     @Override
                                     public void run() throws SecurityException {
-                                        bluetoothDevice.connectGatt(BleMidiCentralProvider.this.context, true, midiCallback);
+                                        bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
                                     }
                                 });
                             } else {
                                 if (Thread.currentThread() == context.getMainLooper().getThread()) {
-                                    bluetoothDevice.connectGatt(BleMidiCentralProvider.this.context, true, midiCallback);
+                                    bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
                                 } else {
                                     handler.post(new Runnable() {
                                         @Override
                                         public void run() throws SecurityException {
-                                            bluetoothDevice.connectGatt(BleMidiCentralProvider.this.context, true, midiCallback);
+                                            bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
                                         }
                                     });
                                 }
