@@ -21,7 +21,6 @@ import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.os.ParcelUuid;
-import android.text.TextUtils;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -33,8 +32,6 @@ import java.util.UUID;
 
 import jp.kshoji.blemidi.device.MidiInputDevice;
 import jp.kshoji.blemidi.device.MidiOutputDevice;
-import jp.kshoji.blemidi.listener.OnMidiInputEventListener;
-import jp.kshoji.blemidi.util.BleMidiParser;
 import jp.kshoji.blemidi.util.BleUuidUtils;
 import jp.kshoji.blemidi.util.Constants;
 
@@ -43,28 +40,23 @@ public abstract class PeripheralProvider {
 
     private boolean isAdvertisingStarted = false;
 
-    /**
-     * Gatt Services
-     */
+    /* Gatt Services */
     private static final UUID SERVICE_DEVICE_INFORMATION = BleUuidUtils.fromShortValue(0x180A);
     private static final UUID SERVICE_BLE_MIDI = UUID.fromString("03b80e5a-ede8-4b33-a751-6ce34ec4c700");
 
-    /**
-     * Gatt Characteristics
-     */
+    /* Gatt Characteristics */
     private static final short MANUFACTURER_NAME = 0x2A29;
     private static final short MODEL_NUMBER = 0x2A24;
     private static final UUID CHARACTERISTIC_MANUFACTURER_NAME = BleUuidUtils.fromShortValue(MANUFACTURER_NAME);
     private static final UUID CHARACTERISTIC_MODEL_NUMBER = BleUuidUtils.fromShortValue(MODEL_NUMBER);
     private static final UUID CHARACTERISTIC_BLE_MIDI = UUID.fromString("7772e5db-3868-4112-a1a9-f2669d106bf3");
 
-    /**
-     * Gatt Characteristic Descriptor
-     */
+    /* Gatt Characteristic Descriptor */
     private static final UUID DESCRIPTOR_CLIENT_CHARACTERISTIC_CONFIGURATION = BleUuidUtils.fromShortValue(0x2902);
 
     private static final int DEVICE_NAME_MAX_LENGTH = 100;
     public final BluetoothGattCharacteristic midiCharacteristic;
+    public final Map<String, BluetoothDevice> bluetoothDevicesMap = new HashMap<>();
     public final Map<String, MidiInputDevice> midiInputDevicesMap = new HashMap<>();
     public final Map<String, MidiOutputDevice> midiOutputDevicesMap = new HashMap<>();
     private final Context context;
@@ -181,12 +173,6 @@ public abstract class PeripheralProvider {
         }
     };
 
-    /**
-     * Constructor<br />
-     * Before constructing the instance, check the Bluetooth availability.
-     *
-     * @param context the context
-     */
     public PeripheralProvider(final Context context) throws UnsupportedOperationException {
         this.context = context.getApplicationContext();
 
@@ -227,10 +213,6 @@ public abstract class PeripheralProvider {
         midiGattService = new BluetoothGattService(SERVICE_BLE_MIDI, BluetoothGattService.SERVICE_TYPE_PRIMARY);
         midiGattService.addCharacteristic(midiCharacteristic);
     }
-
-    /**
-     * Starts advertising
-     */
 
     public void startAdvertising() throws SecurityException {
         // register Gatt service to Gatt server
@@ -303,9 +285,6 @@ public abstract class PeripheralProvider {
         }
     }
 
-    /**
-     * Stops advertising
-     */
     public void stopAdvertising() throws SecurityException {
         synchronized (this) {
             isAdvertisingStarted = false;
@@ -317,60 +296,35 @@ public abstract class PeripheralProvider {
         }
     }
 
-//    /**
-//     * Disconnects the specified device
-//     *
-//     * @param midiOutputDevice the device
-//     */
-//    public void disconnectDevice(@NonNull MidiOutputDevice midiOutputDevice) {
-//        if (!(midiOutputDevice instanceof InternalMidiOutputDevice)) {
-//            return;
-//        }
-//
-//        disconnectByDeviceAddress(((InternalMidiOutputDevice) midiOutputDevice).bluetoothDevice);
-//    }
-//
-//    public void disconnectDevice(@NonNull MidiInputDevice midiOutputDevice) {
-//        if (!(midiOutputDevice instanceof InternalMidiInputDevice)) {
-//            return;
-//        }
-//        disconnectByDeviceAddress(midiOutputDevice.getDeviceAddress());
-//    }
+    public void disconnectDevice(@NonNull MidiOutputDevice midiOutputDevice) {
+        if (!(midiOutputDevice instanceof PeripheralMidiOutputDevice)) return;
+        disconnectDevice(((PeripheralMidiOutputDevice) midiOutputDevice).bluetoothDevice);
+    }
 
-//    /**
-//     * Disconnects the device by its address
-//     *
-//     * @param deviceAddress the device address from {@link android.bluetooth.BluetoothGatt}
-//     */
-//    private void disconnectByDevice(@NonNull String deviceAddress) throws SecurityException {
-//        synchronized (bluetoothDevicesMap) {
-//            BluetoothDevice bluetoothDevice = bluetoothDevicesMap.get(deviceAddress);
-//            if (bluetoothDevice != null) {
-//                gattServer.cancelConnection(bluetoothDevice);
-//                bluetoothDevice.connectGatt(context, true, disconnectCallback);
-//            }
-//        }
-//    }
+    public void disconnectDevice(@NonNull MidiInputDevice device) {
+        if (!(device instanceof PeripheralMidiInputDevice)) return;
+        disconnectDevice(device.getDeviceAddress());
+    }
+
+    private void disconnectDevice(@NonNull String deviceAddress) throws SecurityException {
+        synchronized (bluetoothDevicesMap) {
+            BluetoothDevice bluetoothDevice = bluetoothDevicesMap.get(deviceAddress);
+            if (bluetoothDevice != null) disconnectDevice(bluetoothDevice);
+        }
+    }
 
     public void disconnectDevice(@NonNull BluetoothDevice bluetoothDevice) throws SecurityException {
         gattServer.cancelConnection(bluetoothDevice);
         bluetoothDevice.connectGatt(context, true, disconnectCallback);
     }
 
-    /**
-     * Terminates provider
-     */
     public void terminate() throws SecurityException {
         stopAdvertising();
-
-//        synchronized (bluetoothDevicesMap) {
-//            for (BluetoothDevice bluetoothDevice : bluetoothDevicesMap.values()) {
-//                gattServer.cancelConnection(bluetoothDevice);
-//                bluetoothDevice.connectGatt(context, true, disconnectCallback);
-//            }
-//            bluetoothDevicesMap.clear();
-//        }
-
+        synchronized (bluetoothDevicesMap) {
+            for (BluetoothDevice bluetoothDevice : bluetoothDevicesMap.values())
+                disconnectDevice(bluetoothDevice);
+            bluetoothDevicesMap.clear();
+        }
         if (gattServer != null) {
             try {
                 gattServer.clearServices();
@@ -385,7 +339,6 @@ public abstract class PeripheralProvider {
             }
             gattServer = null;
         }
-
         synchronized (midiInputDevicesMap) {
             for (MidiInputDevice midiInputDevice : midiInputDevicesMap.values()) {
                 ((PeripheralMidiInputDevice) midiInputDevice).stop();
@@ -393,16 +346,15 @@ public abstract class PeripheralProvider {
             }
             midiInputDevicesMap.clear();
         }
-
         synchronized (midiOutputDevicesMap) {
             midiOutputDevicesMap.clear();
         }
     }
 
     protected void onDeviceConnected(@NonNull BluetoothDevice device) {
-//        synchronized (bluetoothDevicesMap) {
-//            bluetoothDevicesMap.put(device.getAddress(), device);
-//        }
+        synchronized (bluetoothDevicesMap) {
+            bluetoothDevicesMap.put(device.getAddress(), device);
+        }
     }
 
     protected void onDeviceDisconnected(@NonNull BluetoothDevice device) {
@@ -412,9 +364,9 @@ public abstract class PeripheralProvider {
         synchronized (midiOutputDevicesMap) {
             midiOutputDevicesMap.remove(device.getAddress());
         }
-//        synchronized (bluetoothDevicesMap) {
-//            bluetoothDevicesMap.remove(device.getAddress());
-//        }
+        synchronized (bluetoothDevicesMap) {
+            bluetoothDevicesMap.remove(device.getAddress());
+        }
     }
 
     public void setManufacturer(@NonNull String manufacturer) {
@@ -442,8 +394,4 @@ public abstract class PeripheralProvider {
             this.deviceName = deviceName;
         }
     }
-
 }
-
-
-
