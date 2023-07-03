@@ -21,11 +21,9 @@ import jp.kshoji.blemidi.util.BleMidiParser;
 import jp.kshoji.blemidi.util.BleUuidUtils;
 
 @SuppressLint("MissingPermission")
-final class CentralMidiInputDevice extends MidiInputDevice {
+public final class CentralMidiInputDevice extends MidiInputDevice {
     private final BluetoothGatt bluetoothGatt;
     private final BluetoothGattCharacteristic midiInputCharacteristic;
-
-    private final BleMidiParser midiParser = new BleMidiParser(this);
 
     public CentralMidiInputDevice(@NonNull final Context context, @NonNull final BluetoothGatt bluetoothGatt) throws IllegalArgumentException, SecurityException {
         super();
@@ -38,20 +36,14 @@ final class CentralMidiInputDevice extends MidiInputDevice {
             }
             throw new IllegalArgumentException("MIDI GattService not found from '" + bluetoothGatt.getDevice().getName() + "'. Service UUIDs:" + Arrays.toString(uuidList.toArray()));
         }
-
         midiInputCharacteristic = BleMidiDeviceUtils.getMidiInputCharacteristic(context, midiService);
         if (midiInputCharacteristic == null) {
             throw new IllegalArgumentException("MIDI Input GattCharacteristic not found. Service UUID:" + midiService.getUuid());
         }
     }
 
-    void stop() {
-        midiParser.stop();
-    }
-
     public void configureAsCentralDevice() throws SecurityException {
         bluetoothGatt.setCharacteristicNotification(midiInputCharacteristic, true);
-
         List<BluetoothGattDescriptor> descriptors = midiInputCharacteristic.getDescriptors();
         for (BluetoothGattDescriptor descriptor : descriptors) {
             if (BleUuidUtils.matches(BleUuidUtils.fromShortValue(0x2902), descriptor.getUuid())) {
@@ -59,13 +51,7 @@ final class CentralMidiInputDevice extends MidiInputDevice {
                 bluetoothGatt.writeDescriptor(descriptor);
             }
         }
-
         bluetoothGatt.readCharacteristic(midiInputCharacteristic);
-    }
-
-    @Override
-    public void setOnMidiInputEventListener(OnMidiInputEventListener midiInputEventListener) {
-        midiParser.setMidiInputEventListener(midiInputEventListener);
     }
 
     @NonNull
@@ -79,7 +65,25 @@ final class CentralMidiInputDevice extends MidiInputDevice {
         return bluetoothGatt.getDevice().getAddress();
     }
 
+    private BleMidiParser midiParser;
+    private OnMidiInputEventListener midiInputEventListener;
+
+    @Override
+    public void setOnMidiInputEventListener(OnMidiInputEventListener midiInputEventListener) {
+        this.midiInputEventListener = midiInputEventListener;
+    }
+
+    public void start() {
+        midiParser = new BleMidiParser(this);
+        midiParser.setMidiInputEventListener(midiInputEventListener);
+    }
+
+    public void stop() {
+        midiParser.stop();
+        midiParser = null;
+    }
+
     void incomingData(@NonNull byte[] data) {
-        midiParser.parse(data);
+        if (midiParser != null) midiParser.parse(data);
     }
 }

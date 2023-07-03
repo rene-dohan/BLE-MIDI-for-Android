@@ -3,7 +3,6 @@ package jp.kshoji.blemidi.central;
 import static jp.kshoji.blemidi.util.BleUtils.SELECT_DEVICE_REQUEST_CODE;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -31,8 +30,6 @@ import java.util.Set;
 
 import jp.kshoji.blemidi.device.MidiInputDevice;
 import jp.kshoji.blemidi.device.MidiOutputDevice;
-import jp.kshoji.blemidi.listener.OnMidiDeviceAttachedListener;
-import jp.kshoji.blemidi.listener.OnMidiDeviceDetachedListener;
 import jp.kshoji.blemidi.listener.OnMidiScanStatusListener;
 import jp.kshoji.blemidi.util.BleMidiDeviceUtils;
 import jp.kshoji.blemidi.util.Constants;
@@ -116,79 +113,53 @@ public class CentralProvider {
         this.midiCallback = new CentralCallback(context);
         this.handler = new Handler(context.getMainLooper());
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            scanCallback = new ScanCallback() {
-                @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-                @Override
-                public void onScanResult(int callbackType, ScanResult result) throws SecurityException {
-                    super.onScanResult(callbackType, result);
+        scanCallback = new ScanCallback() {
+            @Override
+            public void onScanResult(int callbackType, ScanResult result) throws SecurityException {
+                super.onScanResult(callbackType, result);
 
-                    if (callbackType == ScanSettings.CALLBACK_TYPE_ALL_MATCHES) {
-                        final BluetoothDevice bluetoothDevice = result.getDevice();
+                if (callbackType == ScanSettings.CALLBACK_TYPE_ALL_MATCHES) {
+                    final BluetoothDevice bluetoothDevice = result.getDevice();
 
-                        if (bluetoothDevice.getType() != BluetoothDevice.DEVICE_TYPE_LE && bluetoothDevice.getType() != BluetoothDevice.DEVICE_TYPE_DUAL) {
-                            return;
-                        }
+                    if (bluetoothDevice.getType() != BluetoothDevice.DEVICE_TYPE_LE && bluetoothDevice.getType() != BluetoothDevice.DEVICE_TYPE_DUAL) {
+                        return;
+                    }
 
-                        if (!midiCallback.isConnected(bluetoothDevice)) {
-                            if (context instanceof Activity) {
-                                ((Activity) context).runOnUiThread(new Runnable() {
+                    if (!midiCallback.isConnected(bluetoothDevice)) {
+                        if (context instanceof Activity) {
+                            ((Activity) context).runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() throws SecurityException {
+                                    bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
+                                }
+                            });
+                        } else {
+                            if (Thread.currentThread() == context.getMainLooper().getThread()) {
+                                bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
+                            } else {
+                                handler.post(new Runnable() {
                                     @Override
                                     public void run() throws SecurityException {
                                         bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
                                     }
                                 });
-                            } else {
-                                if (Thread.currentThread() == context.getMainLooper().getThread()) {
-                                    bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
-                                } else {
-                                    handler.post(new Runnable() {
-                                        @Override
-                                        public void run() throws SecurityException {
-                                            bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
-                                        }
-                                    });
-                                }
                             }
                         }
                     }
                 }
-            };
-        } else {
-            scanCallback = null;
-        }
+            }
+        };
     }
 
-    /**
-     * Connect to Bluetooth LE device
-     *
-     * @param bluetoothDevice the BluetoothDevice
-     */
     @SuppressLint("MissingPermission")
     public void connectGatt(BluetoothDevice bluetoothDevice) {
         bluetoothDevice.connectGatt(context, true, midiCallback);
     }
 
-    /**
-     * Set if the Bluetooth LE device need `Pairing` <br />
-     * Pairing feature can be used on Android KitKat (API Level 19) or later.
-     *
-     * @param needsPairing if true, request paring with the connecting device
-     */
-    @TargetApi(Build.VERSION_CODES.KITKAT)
     public void setRequestPairing(boolean needsPairing) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
-            Log.d(Constants.TAG, "Pairing feature is not supported on API Level " + Build.VERSION.SDK_INT);
-            return;
-        }
         midiCallback.setNeedsBonding(needsPairing);
     }
 
-    /**
-     * Starts to scan devices
-     *
-     * @param timeoutInMilliSeconds 0 or negative value : no timeout
-     */
     @SuppressLint({"Deprecation", "NewApi"})
     public void startScanDevice(int timeoutInMilliSeconds) throws SecurityException {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && useCompanionDeviceSetup) {
@@ -224,14 +195,11 @@ public class CentralProvider {
                 bluetoothLeScanner.startScan(scanFilters, scanSettings, scanCallback);
                 isScanning = true;
             }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        } else {
             BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
             List<ScanFilter> scanFilters = BleMidiDeviceUtils.getBleMidiScanFilters(context);
             ScanSettings scanSettings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
             bluetoothLeScanner.startScan(scanFilters, scanSettings, scanCallback);
-            isScanning = true;
-        } else {
-            bluetoothAdapter.startLeScan(leScanCallback);
             isScanning = true;
         }
 
@@ -259,21 +227,16 @@ public class CentralProvider {
         }
     }
 
-    /**
-     * Stops to scan devices
-     */
     @SuppressLint({"Deprecation", "NewApi"})
     public void stopScanDevice() throws SecurityException {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && useCompanionDeviceSetup) {
                 // using CompanionDeviceManager, do nothing
                 return;
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            } else {
                 final BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
                 bluetoothLeScanner.flushPendingScanResults(scanCallback);
                 bluetoothLeScanner.stopScan(scanCallback);
-            } else {
-                bluetoothAdapter.stopLeScan(leScanCallback);
             }
         } catch (Throwable ignored) {
             // NullPointerException on Bluetooth is OFF
@@ -290,74 +253,36 @@ public class CentralProvider {
         }
     }
 
-    /**
-     * Disconnects the specified device
-     *
-     * @param midiInputDevice the device
-     */
     public void disconnectDevice(@NonNull MidiInputDevice midiInputDevice) {
         midiCallback.disconnectDevice(midiInputDevice);
     }
 
-    /**
-     * Disconnects the specified device
-     *
-     * @param midiOutputDevice the device
-     */
     public void disconnectDevice(@NonNull MidiOutputDevice midiOutputDevice) {
         midiCallback.disconnectDevice(midiOutputDevice);
     }
 
-    /**
-     * Obtains the set of {@link jp.kshoji.blemidi.device.MidiInputDevice} that is currently connected
-     *
-     * @return unmodifiable set
-     */
     @NonNull
-    public Set<MidiInputDevice> getMidiInputDevices() {
+    public Set<CentralMidiInputDevice> getMidiInputDevices() {
         return midiCallback.getMidiInputDevices();
     }
 
-    /**
-     * Obtains the set of {@link jp.kshoji.blemidi.device.MidiOutputDevice} that is currently connected
-     *
-     * @return unmodifiable set
-     */
     @NonNull
-    public Set<MidiOutputDevice> getMidiOutputDevices() {
+    public Set<CentralMidiOutputDevice> getMidiOutputDevices() {
         return midiCallback.getMidiOutputDevices();
     }
 
-    /**
-     * Set the listener of device scanning status
-     *
-     * @param onMidiScanStatusListener the listener
-     */
     public void setOnMidiScanStatusListener(@Nullable OnMidiScanStatusListener onMidiScanStatusListener) {
         this.onMidiScanStatusListener = onMidiScanStatusListener;
     }
 
-    /**
-     * Set the listener for attaching devices
-     *
-     * @param midiDeviceAttachedListener the listener
-     */
-    public void setOnMidiDeviceAttachedListener(@Nullable OnMidiDeviceAttachedListener midiDeviceAttachedListener) {
+    public void setOnMidiDeviceAttachedListener(@Nullable CentralDeviceAttachedListener midiDeviceAttachedListener) {
         this.midiCallback.setOnMidiDeviceAttachedListener(midiDeviceAttachedListener);
     }
 
-    /**
-     * Set the listener for detaching devices
-     *
-     * @param midiDeviceDetachedListener the listener
-     */
-    public void setOnMidiDeviceDetachedListener(@Nullable OnMidiDeviceDetachedListener midiDeviceDetachedListener) {
+    public void setOnMidiDeviceDetachedListener(@Nullable CentralDeviceDetachedListener midiDeviceDetachedListener) {
         this.midiCallback.setOnMidiDeviceDetachedListener(midiDeviceDetachedListener);
     }
 
-    /**
-     * Terminates provider
-     */
     public void terminate() {
         midiCallback.terminate();
         stopScanDevice();

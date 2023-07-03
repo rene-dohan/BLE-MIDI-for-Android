@@ -17,7 +17,7 @@ import jp.kshoji.blemidi.device.MidiOutputDevice;
 import jp.kshoji.blemidi.util.BleMidiDeviceUtils;
 
 @SuppressLint("MissingPermission")
-final class CentralMidiOutputDevice extends MidiOutputDevice {
+public final class CentralMidiOutputDevice extends MidiOutputDevice {
     private final BluetoothGatt bluetoothGatt;
     private final BluetoothGattCharacteristic midiOutputCharacteristic;
     private int bufferSize = 20;
@@ -28,15 +28,13 @@ final class CentralMidiOutputDevice extends MidiOutputDevice {
         BluetoothGattService midiService = BleMidiDeviceUtils.getMidiService(context, bluetoothGatt);
         if (midiService == null) {
             List<UUID> uuidList = new ArrayList<>();
-            for (BluetoothGattService service : bluetoothGatt.getServices()) {
+            for (BluetoothGattService service : bluetoothGatt.getServices())
                 uuidList.add(service.getUuid());
-            }
             throw new IllegalArgumentException("MIDI GattService not found from '" + bluetoothGatt.getDevice().getName() + "'. Service UUIDs:" + Arrays.toString(uuidList.toArray()));
         }
         midiOutputCharacteristic = BleMidiDeviceUtils.getMidiOutputCharacteristic(context, midiService);
-        if (midiOutputCharacteristic == null) {
+        if (midiOutputCharacteristic == null)
             throw new IllegalArgumentException("MIDI Output GattCharacteristic not found. Service UUID:" + midiService.getUuid());
-        }
     }
 
     public void configureAsCentralDevice() {

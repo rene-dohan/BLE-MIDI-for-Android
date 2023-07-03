@@ -28,18 +28,16 @@ import java.util.Set;
 
 import jp.kshoji.blemidi.device.MidiInputDevice;
 import jp.kshoji.blemidi.device.MidiOutputDevice;
-import jp.kshoji.blemidi.listener.OnMidiDeviceAttachedListener;
-import jp.kshoji.blemidi.listener.OnMidiDeviceDetachedListener;
 
 @SuppressLint("MissingPermission")
 public class CentralCallback extends BluetoothGattCallback {
     private volatile static Object gattDiscoverServicesLock = null;
-    private final Map<String, Set<MidiInputDevice>> midiInputDevicesMap = new HashMap<>();
-    private final Map<String, Set<MidiOutputDevice>> midiOutputDevicesMap = new HashMap<>();
+    private final Map<String, Set<CentralMidiInputDevice>> midiInputDevicesMap = new HashMap<>();
+    private final Map<String, Set<CentralMidiOutputDevice>> midiOutputDevicesMap = new HashMap<>();
     private final Map<String, List<BluetoothGatt>> deviceAddressGattMap = new HashMap<>();
     private final Context context;
-    private OnMidiDeviceAttachedListener midiDeviceAttachedListener;
-    private OnMidiDeviceDetachedListener midiDeviceDetachedListener;
+    private CentralDeviceAttachedListener midiDeviceAttachedListener;
+    private CentralDeviceDetachedListener midiDeviceDetachedListener;
     private boolean needsBonding = false;
     private BondingBroadcastReceiver bondingBroadcastReceiver;
 
@@ -103,10 +101,10 @@ public class CentralCallback extends BluetoothGattCallback {
         // find MIDI Input device
         synchronized (midiInputDevicesMap) {
             if (midiInputDevicesMap.containsKey(gattDeviceAddress)) {
-                Set<MidiInputDevice> midiInputDevices = midiInputDevicesMap.get(gattDeviceAddress);
+                Set<CentralMidiInputDevice> midiInputDevices = midiInputDevicesMap.get(gattDeviceAddress);
                 if (midiInputDevices != null) {
-                    for (MidiInputDevice midiInputDevice : midiInputDevices) {
-                        ((CentralMidiInputDevice) midiInputDevice).stop();
+                    for (CentralMidiInputDevice midiInputDevice : midiInputDevices) {
+                        midiInputDevice.stop();
                         midiInputDevice.setOnMidiInputEventListener(null);
                     }
                 }
@@ -122,7 +120,7 @@ public class CentralCallback extends BluetoothGattCallback {
         }
         if (midiInputDevice != null) {
             synchronized (midiInputDevicesMap) {
-                Set<MidiInputDevice> midiInputDevices = midiInputDevicesMap.get(gattDeviceAddress);
+                Set<CentralMidiInputDevice> midiInputDevices = midiInputDevicesMap.get(gattDeviceAddress);
                 if (midiInputDevices == null) {
                     midiInputDevices = new HashSet<>();
                     midiInputDevicesMap.put(gattDeviceAddress, midiInputDevices);
@@ -141,7 +139,7 @@ public class CentralCallback extends BluetoothGattCallback {
 
         // find MIDI Output device
         synchronized (midiOutputDevicesMap) {
-            Set<MidiOutputDevice> midiOutputDevices = midiOutputDevicesMap.get(gattDeviceAddress);
+            Set<CentralMidiOutputDevice> midiOutputDevices = midiOutputDevicesMap.get(gattDeviceAddress);
             if (midiOutputDevices != null) {
                 for (MidiOutputDevice midiOutputDevice : midiOutputDevices) {
                     midiOutputDevice.stop();
@@ -158,7 +156,7 @@ public class CentralCallback extends BluetoothGattCallback {
         }
         if (midiOutputDevice != null) {
             synchronized (midiOutputDevicesMap) {
-                Set<MidiOutputDevice> midiOutputDevices = midiOutputDevicesMap.get(gattDeviceAddress);
+                Set<CentralMidiOutputDevice> midiOutputDevices = midiOutputDevicesMap.get(gattDeviceAddress);
                 if (midiOutputDevices == null) {
                     midiOutputDevices = new HashSet<>();
                     midiOutputDevicesMap.put(gattDeviceAddress, midiOutputDevices);
@@ -221,10 +219,10 @@ public class CentralCallback extends BluetoothGattCallback {
     public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
         super.onCharacteristicChanged(gatt, characteristic);
 
-        Set<MidiInputDevice> midiInputDevices = midiInputDevicesMap.get(gatt.getDevice().getAddress());
+        Set<CentralMidiInputDevice> midiInputDevices = midiInputDevicesMap.get(gatt.getDevice().getAddress());
         if (midiInputDevices != null) {
-            for (MidiInputDevice midiInputDevice : midiInputDevices) {
-                ((CentralMidiInputDevice) midiInputDevice).incomingData(characteristic.getValue());
+            for (CentralMidiInputDevice midiInputDevice : midiInputDevices) {
+                midiInputDevice.incomingData(characteristic.getValue());
             }
         }
     }
@@ -234,10 +232,10 @@ public class CentralCallback extends BluetoothGattCallback {
         super.onMtuChanged(gatt, mtu, status);
 
         synchronized (midiOutputDevicesMap) {
-            Set<MidiOutputDevice> midiOutputDevices = midiOutputDevicesMap.get(gatt.getDevice().getAddress());
+            Set<CentralMidiOutputDevice> midiOutputDevices = midiOutputDevicesMap.get(gatt.getDevice().getAddress());
             if (midiOutputDevices != null) {
-                for (MidiOutputDevice midiOutputDevice : midiOutputDevices) {
-                    ((CentralMidiOutputDevice) midiOutputDevice).setBufferSize(mtu < 23 ? 20 : mtu - 3);
+                for (CentralMidiOutputDevice midiOutputDevice : midiOutputDevices) {
+                    midiOutputDevice.setBufferSize(mtu < 23 ? 20 : mtu - 3);
                 }
             }
         }
@@ -275,29 +273,26 @@ public class CentralCallback extends BluetoothGattCallback {
         }
 
         synchronized (midiInputDevicesMap) {
-            Set<MidiInputDevice> midiInputDevices = midiInputDevicesMap.get(deviceAddress);
+            Set<CentralMidiInputDevice> midiInputDevices = midiInputDevicesMap.get(deviceAddress);
             if (midiInputDevices != null) {
                 midiInputDevicesMap.remove(deviceAddress);
-
-                for (MidiInputDevice midiInputDevice : midiInputDevices) {
-                    ((CentralMidiInputDevice) midiInputDevice).stop();
+                for (CentralMidiInputDevice midiInputDevice : midiInputDevices) {
+                    midiInputDevice.stop();
                     midiInputDevice.setOnMidiInputEventListener(null);
-
                     if (midiDeviceDetachedListener != null) {
                         midiDeviceDetachedListener.onMidiInputDeviceDetached(midiInputDevice);
                     }
-
                 }
                 midiInputDevices.clear();
             }
         }
 
         synchronized (midiOutputDevicesMap) {
-            Set<MidiOutputDevice> midiOutputDevices = midiOutputDevicesMap.get(deviceAddress);
+            Set<CentralMidiOutputDevice> midiOutputDevices = midiOutputDevicesMap.get(deviceAddress);
             if (midiOutputDevices != null) {
                 midiOutputDevicesMap.remove(deviceAddress);
 
-                for (MidiOutputDevice midiOutputDevice : midiOutputDevices) {
+                for (CentralMidiOutputDevice midiOutputDevice : midiOutputDevices) {
                     midiOutputDevice.stop();
                     if (midiDeviceDetachedListener != null) {
                         midiDeviceDetachedListener.onMidiOutputDeviceDetached(midiOutputDevice);
@@ -322,19 +317,18 @@ public class CentralCallback extends BluetoothGattCallback {
         }
 
         synchronized (midiInputDevicesMap) {
-            for (Set<MidiInputDevice> midiInputDevices : midiInputDevicesMap.values()) {
-                for (MidiInputDevice midiInputDevice : midiInputDevices) {
-                    ((CentralMidiInputDevice) midiInputDevice).stop();
+            for (Set<CentralMidiInputDevice> midiInputDevices : midiInputDevicesMap.values()) {
+                for (CentralMidiInputDevice midiInputDevice : midiInputDevices) {
+                    midiInputDevice.stop();
                     midiInputDevice.setOnMidiInputEventListener(null);
                 }
-
                 midiInputDevices.clear();
             }
             midiInputDevicesMap.clear();
         }
 
         synchronized (midiOutputDevicesMap) {
-            for (Set<MidiOutputDevice> midiOutputDevices : midiOutputDevicesMap.values()) {
+            for (Set<CentralMidiOutputDevice> midiOutputDevices : midiOutputDevicesMap.values()) {
                 for (MidiOutputDevice midiOutputDevice : midiOutputDevices) {
                     midiOutputDevice.stop();
                 }
@@ -355,11 +349,11 @@ public class CentralCallback extends BluetoothGattCallback {
     }
 
     @NonNull
-    public Set<MidiInputDevice> getMidiInputDevices() {
-        Collection<Set<MidiInputDevice>> values = midiInputDevicesMap.values();
+    public Set<CentralMidiInputDevice> getMidiInputDevices() {
+        Collection<Set<CentralMidiInputDevice>> values = midiInputDevicesMap.values();
 
-        Set<MidiInputDevice> result = new HashSet<>();
-        for (Set<MidiInputDevice> value : values) {
+        Set<CentralMidiInputDevice> result = new HashSet<>();
+        for (Set<CentralMidiInputDevice> value : values) {
             result.addAll(value);
         }
 
@@ -367,22 +361,22 @@ public class CentralCallback extends BluetoothGattCallback {
     }
 
     @NonNull
-    public Set<MidiOutputDevice> getMidiOutputDevices() {
-        Collection<Set<MidiOutputDevice>> values = midiOutputDevicesMap.values();
+    public Set<CentralMidiOutputDevice> getMidiOutputDevices() {
+        Collection<Set<CentralMidiOutputDevice>> values = midiOutputDevicesMap.values();
 
-        Set<MidiOutputDevice> result = new HashSet<>();
-        for (Set<MidiOutputDevice> value : values) {
+        Set<CentralMidiOutputDevice> result = new HashSet<>();
+        for (Set<CentralMidiOutputDevice> value : values) {
             result.addAll(value);
         }
 
         return Collections.unmodifiableSet(result);
     }
 
-    public void setOnMidiDeviceAttachedListener(@Nullable OnMidiDeviceAttachedListener midiDeviceAttachedListener) {
+    public void setOnMidiDeviceAttachedListener(@Nullable CentralDeviceAttachedListener midiDeviceAttachedListener) {
         this.midiDeviceAttachedListener = midiDeviceAttachedListener;
     }
 
-    public void setOnMidiDeviceDetachedListener(@Nullable OnMidiDeviceDetachedListener midiDeviceDetachedListener) {
+    public void setOnMidiDeviceDetachedListener(@Nullable CentralDeviceDetachedListener midiDeviceDetachedListener) {
         this.midiDeviceDetachedListener = midiDeviceDetachedListener;
     }
 
