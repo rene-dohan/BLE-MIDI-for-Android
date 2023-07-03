@@ -1,7 +1,8 @@
 package jp.kshoji.blemidi.central;
 
+import static jp.kshoji.blemidi.util.Constants.TAG;
+
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
@@ -11,7 +12,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -30,10 +30,9 @@ import jp.kshoji.blemidi.device.MidiInputDevice;
 import jp.kshoji.blemidi.device.MidiOutputDevice;
 import jp.kshoji.blemidi.listener.OnMidiDeviceAttachedListener;
 import jp.kshoji.blemidi.listener.OnMidiDeviceDetachedListener;
-import jp.kshoji.blemidi.util.Constants;
 
 @SuppressLint("MissingPermission")
-public final class CentralCallback extends BluetoothGattCallback {
+public class CentralCallback extends BluetoothGattCallback {
     private volatile static Object gattDiscoverServicesLock = null;
     private final Map<String, Set<MidiInputDevice>> midiInputDevicesMap = new HashMap<>();
     private final Map<String, Set<MidiOutputDevice>> midiOutputDevicesMap = new HashMap<>();
@@ -100,11 +99,9 @@ public final class CentralCallback extends BluetoothGattCallback {
 
         final String gattDeviceAddress = gatt.getDevice().getAddress();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            // request maximum MTU size
-            boolean result = gatt.requestMtu(517); // GATT_MAX_MTU_SIZE defined at `stack/include/gatt_api.h`
-            Log.d(Constants.TAG, "Central requestMtu address: " + gatt.getDevice().getAddress() + ", succeed: " + result);
-        }
+        // request maximum MTU size
+        boolean result = gatt.requestMtu(517); // GATT_MAX_MTU_SIZE defined at `stack/include/gatt_api.h`
+        Log.d(TAG, "Central requestMtu address: " + gatt.getDevice().getAddress() + ", succeed: " + result);
 
         // find MIDI Input device
         synchronized (midiInputDevicesMap) {
@@ -124,7 +121,7 @@ public final class CentralCallback extends BluetoothGattCallback {
         try {
             midiInputDevice = new CentralMidiInputDevice(context, gatt);
         } catch (IllegalArgumentException iae) {
-            Log.d(Constants.TAG, iae.getMessage());
+            Log.d(TAG, iae.getMessage());
         }
         if (midiInputDevice != null) {
             synchronized (midiInputDevicesMap) {
@@ -160,7 +157,7 @@ public final class CentralCallback extends BluetoothGattCallback {
         try {
             midiOutputDevice = new CentralMidiOutputDevice(context, gatt);
         } catch (IllegalArgumentException iae) {
-            Log.d(Constants.TAG, iae.getMessage());
+            Log.d(TAG, iae.getMessage());
         }
         if (midiOutputDevice != null) {
             synchronized (midiOutputDevicesMap) {
@@ -191,7 +188,7 @@ public final class CentralCallback extends BluetoothGattCallback {
                 bluetoothGatts.add(gatt);
             }
 
-            if (needsBonding && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            if (needsBonding) {
                 // Create bond and configure Gatt, if this is BLE MIDI device
                 BluetoothDevice bluetoothDevice = gatt.getDevice();
                 if (bluetoothDevice.getBondState() != BluetoothDevice.BOND_BONDED) {
@@ -200,7 +197,7 @@ public final class CentralCallback extends BluetoothGattCallback {
                         bluetoothDevice.setPairingConfirmation(true);
                     } catch (Throwable t) {
                         // SecurityException if android.permission.BLUETOOTH_PRIVILEGED not available
-                        Log.d(Constants.TAG, t.getMessage());
+                        Log.d(TAG, t.getMessage());
                     }
 
                     if (bondingBroadcastReceiver != null) {
@@ -215,10 +212,8 @@ public final class CentralCallback extends BluetoothGattCallback {
                 if (midiOutputDevice != null) midiOutputDevice.configureAsCentralDevice();
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                // Set the connection priority to high(for low latency)
-                gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH);
-            }
+            // Set the connection priority to high(for low latency)
+            gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH);
         }
 
         // all finished
@@ -249,7 +244,7 @@ public final class CentralCallback extends BluetoothGattCallback {
                 }
             }
         }
-        Log.d(Constants.TAG, "Central onMtuChanged address: " + gatt.getDevice().getAddress() + ", mtu: " + mtu + ", status: " + status);
+        Log.d(TAG, "Central onMtuChanged address: " + gatt.getDevice().getAddress() + ", mtu: " + mtu + ", status: " + status);
     }
 
     void disconnectDevice(@NonNull MidiInputDevice midiInputDevice) {
@@ -358,7 +353,6 @@ public final class CentralCallback extends BluetoothGattCallback {
         }
     }
 
-    @TargetApi(Build.VERSION_CODES.KITKAT)
     public void setNeedsBonding(boolean needsBonding) {
         this.needsBonding = needsBonding;
     }
