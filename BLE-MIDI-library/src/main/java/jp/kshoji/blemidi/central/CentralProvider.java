@@ -1,6 +1,6 @@
 package jp.kshoji.blemidi.central;
 
-import static jp.kshoji.blemidi.util.BleUtils.SELECT_DEVICE_REQUEST_CODE;
+import static android.os.ParcelUuid.fromString;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -10,29 +10,23 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
+import android.bluetooth.le.ScanFilter.Builder;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
-import android.companion.AssociationRequest;
-import android.companion.CompanionDeviceManager;
 import android.content.Context;
-import android.content.IntentSender;
-import android.content.pm.FeatureInfo;
 import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Handler;
-import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 import jp.kshoji.blemidi.device.MidiInputDevice;
 import jp.kshoji.blemidi.device.MidiOutputDevice;
 import jp.kshoji.blemidi.listener.OnMidiScanStatusListener;
-import jp.kshoji.blemidi.util.BleMidiDeviceUtils;
-import jp.kshoji.blemidi.util.Constants;
 
 @SuppressLint("MissingPermission")
 public class CentralProvider {
@@ -72,83 +66,50 @@ public class CentralProvider {
         }
     };
 
-    private final ScanCallback scanCallback;
-    private boolean useCompanionDeviceSetup;
+    private final ScanCallback scanCallback = new ScanCallback() {
+        @Override
+        public void onBatchScanResults(List<ScanResult> results) {
+            super.onBatchScanResults(results);
+            for (ScanResult result : results) onScan(result);
+        }
+
+        @Override
+        public void onScanResult(int callbackType, ScanResult result) throws SecurityException {
+            super.onScanResult(callbackType, result);
+            onScan(result);
+        }
+    };
+
+    private void onScan(ScanResult result) {
+        //                if (callbackType == ScanSettings.CALLBACK_TYPE_ALL_MATCHES) {
+        final BluetoothDevice device = result.getDevice();
+//                    if (device.getType() != BluetoothDevice.DEVICE_TYPE_LE &&
+//                            device.getType() != BluetoothDevice.DEVICE_TYPE_DUAL)
+//                        return;
+        if (!midiCallback.isConnected(device)) handler.post(new Runnable() {
+            @Override
+            public void run() throws SecurityException {
+                device.connectGatt(CentralProvider.this.context, true, midiCallback);
+            }
+        });
+//                }
+    }
+
     private volatile boolean isScanning = false;
     private Runnable stopScanRunnable = null;
     private OnMidiScanStatusListener onMidiScanStatusListener;
 
     public CentralProvider(@NonNull final Context context) throws UnsupportedOperationException, SecurityException {
-        if (!context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+        if (!context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE))
             throw new UnsupportedOperationException("Bluetooth LE not supported on this device.");
-        }
-
-        try {
-            // Checks `android.software.companion_device_setup` feature specified at AndroidManifest.xml
-            FeatureInfo[] reqFeatures = context.getPackageManager().getPackageInfo(context.getPackageName(), PackageManager.GET_CONFIGURATIONS).reqFeatures;
-            if (reqFeatures != null) {
-                for (FeatureInfo feature : reqFeatures) {
-                    if (feature == null) {
-                        continue;
-                    }
-                    if (PackageManager.FEATURE_COMPANION_DEVICE_SETUP.equals(feature.name)) {
-                        useCompanionDeviceSetup = true;
-                        break;
-                    }
-                }
-            }
-        } catch (PackageManager.NameNotFoundException ignored) {
-        }
-
         bluetoothAdapter = ((BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE)).getAdapter();
-        if (bluetoothAdapter == null) {
+        if (bluetoothAdapter == null)
             throw new UnsupportedOperationException("Bluetooth is not available.");
-        }
-
-        if (!bluetoothAdapter.isEnabled()) {
+        if (!bluetoothAdapter.isEnabled())
             throw new UnsupportedOperationException("Bluetooth is disabled.");
-        }
-
         this.context = context;
         this.midiCallback = new CentralCallback(context);
         this.handler = new Handler(context.getMainLooper());
-
-        scanCallback = new ScanCallback() {
-            @Override
-            public void onScanResult(int callbackType, ScanResult result) throws SecurityException {
-                super.onScanResult(callbackType, result);
-
-                if (callbackType == ScanSettings.CALLBACK_TYPE_ALL_MATCHES) {
-                    final BluetoothDevice bluetoothDevice = result.getDevice();
-
-                    if (bluetoothDevice.getType() != BluetoothDevice.DEVICE_TYPE_LE && bluetoothDevice.getType() != BluetoothDevice.DEVICE_TYPE_DUAL) {
-                        return;
-                    }
-
-                    if (!midiCallback.isConnected(bluetoothDevice)) {
-                        if (context instanceof Activity) {
-                            ((Activity) context).runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() throws SecurityException {
-                                    bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
-                                }
-                            });
-                        } else {
-                            if (Thread.currentThread() == context.getMainLooper().getThread()) {
-                                bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
-                            } else {
-                                handler.post(new Runnable() {
-                                    @Override
-                                    public void run() throws SecurityException {
-                                        bluetoothDevice.connectGatt(CentralProvider.this.context, true, midiCallback);
-                                    }
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        };
     }
 
     @SuppressLint("MissingPermission")
@@ -162,46 +123,19 @@ public class CentralProvider {
 
     @SuppressLint({"Deprecation", "NewApi"})
     public void startScanDevice(int timeoutInMilliSeconds) throws SecurityException {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && useCompanionDeviceSetup) {
-            final CompanionDeviceManager deviceManager = context.getSystemService(CompanionDeviceManager.class);
-            final AssociationRequest associationRequest = BleMidiDeviceUtils.getBleMidiAssociationRequest(context);
-            // TODO: use another associate API when SDK_INT >= VERSION_CODES.TIRAMISU
-            try {
-                deviceManager.associate(associationRequest,
-                        new CompanionDeviceManager.Callback() {
-                            @Override
-                            public void onDeviceFound(final IntentSender intentSender) {
-                                try {
-                                    ((Activity) context).startIntentSenderForResult(intentSender, SELECT_DEVICE_REQUEST_CODE, null, 0, 0, 0);
-                                } catch (IntentSender.SendIntentException e) {
-                                    Log.e(Constants.TAG, e.getMessage(), e);
-                                }
-                            }
-
-                            @Override
-                            public void onFailure(final CharSequence error) {
-                                Log.e(Constants.TAG, "onFailure error: " + error);
-                            }
-                        }, null);
-            } catch (IllegalStateException ignored) {
-                Log.e(Constants.TAG, ignored.getMessage(), ignored);
-                // Must declare uses-feature android.software.companion_device_setup in manifest to use this API
-                // fallback to use BluetoothLeScanner
-                useCompanionDeviceSetup = false;
-
-                BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
-                List<ScanFilter> scanFilters = BleMidiDeviceUtils.getBleMidiScanFilters(context);
-                ScanSettings scanSettings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
-                bluetoothLeScanner.startScan(scanFilters, scanSettings, scanCallback);
-                isScanning = true;
-            }
-        } else {
-            BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
-            List<ScanFilter> scanFilters = BleMidiDeviceUtils.getBleMidiScanFilters(context);
-            ScanSettings scanSettings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
-            bluetoothLeScanner.startScan(scanFilters, scanSettings, scanCallback);
-            isScanning = true;
-        }
+        BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
+        List<ScanFilter> scanFilters = new ArrayList<>();
+        scanFilters.add(new Builder().setServiceUuid(fromString("03B80E5A-EDE8-4B33-A751-6CE34EC4C700")).build());
+//        List<ScanFilter> scanFilters = BleMidiDeviceUtils.getBleMidiScanFilters(context);
+        ScanSettings.Builder settings = new ScanSettings.Builder()
+                .setReportDelay(5000)
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+//                .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+//                .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
+                ;
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) settings.setLegacy(false);
+        bluetoothLeScanner.startScan(scanFilters, settings.build(), scanCallback);
+        isScanning = true;
 
         if (onMidiScanStatusListener != null) {
             onMidiScanStatusListener.onMidiScanStatusChanged(isScanning);
@@ -216,7 +150,6 @@ public class CentralProvider {
                 @Override
                 public void run() {
                     stopScanDevice();
-
                     isScanning = false;
                     if (onMidiScanStatusListener != null) {
                         onMidiScanStatusListener.onMidiScanStatusChanged(isScanning);
@@ -230,14 +163,9 @@ public class CentralProvider {
     @SuppressLint({"Deprecation", "NewApi"})
     public void stopScanDevice() throws SecurityException {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && useCompanionDeviceSetup) {
-                // using CompanionDeviceManager, do nothing
-                return;
-            } else {
-                final BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
-                bluetoothLeScanner.flushPendingScanResults(scanCallback);
-                bluetoothLeScanner.stopScan(scanCallback);
-            }
+            final BluetoothLeScanner bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
+            bluetoothLeScanner.flushPendingScanResults(scanCallback);
+            bluetoothLeScanner.stopScan(scanCallback);
         } catch (Throwable ignored) {
             // NullPointerException on Bluetooth is OFF
         }
