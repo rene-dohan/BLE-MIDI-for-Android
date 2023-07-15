@@ -100,7 +100,8 @@ public abstract class MidiOutputDevice {
             try {
                 transferDataStream.write(data);
                 writtenDataCount += data.length;
-            } catch (IOException ignored) {
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
             }
         }
     }
