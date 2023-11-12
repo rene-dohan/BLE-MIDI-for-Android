@@ -1,6 +1,5 @@
 plugins {
     id 'com.android.library'
-    id 'maven-publish'
 }
 
 android {
@@ -41,26 +40,5 @@ repositories {
 dependencies {
     api 'jp.kshoji:javax-sound-midi:0.0.4:@aar'
     api 'androidx.annotation:annotation:1.7.0'
-//    compileOnly project(':UnityPlayerMock')
     api fileTree(dir: 'libs', include: ['*.jar'])
-}
-
-publishing {
-    publications {
-        release(MavenPublication) {
-            group = 'jp.kshoji'
-            artifactId = 'ble-midi'
-            version = '0.0.14'
-
-            afterEvaluate {
-                from components.release
-            }
-        }
-    }
-
-    repositories {
-        maven {
-            url = "${project.projectDir}/../library/repository"
-        }
-    }
 }
