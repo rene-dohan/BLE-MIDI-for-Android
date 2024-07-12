@@ -1,7 +1,7 @@
 plugins {
     id 'com.android.library'
 }
-
+apply from: "${projectRoot}/common.gradle"
 android {
     compileSdk project.properties.sdk_version
     namespace "jp.kshoji.blemidi"
