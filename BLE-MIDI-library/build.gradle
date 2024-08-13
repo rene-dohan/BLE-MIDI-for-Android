@@ -39,6 +39,6 @@ repositories {
 
 dependencies {
     api 'jp.kshoji:javax-sound-midi:0.0.4:@aar'
-    api 'androidx.annotation:annotation:1.8.0'
+    api 'androidx.annotation:annotation:1.8.2'
     api fileTree(dir: 'libs', include: ['*.jar'])
 }
