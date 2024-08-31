@@ -58,7 +58,7 @@ public final class BleMidiDevice implements MidiDevice {
     public Info getDeviceInfo() {
         String deviceName = "";
         if (midiInputDevice != null) {
-            deviceName = midiInputDevice.getDeviceName();
+            deviceName = midiInputDevice.deviceName();
         } else if (midiOutputDevice != null) {
             deviceName = midiOutputDevice.getDeviceName();
         }

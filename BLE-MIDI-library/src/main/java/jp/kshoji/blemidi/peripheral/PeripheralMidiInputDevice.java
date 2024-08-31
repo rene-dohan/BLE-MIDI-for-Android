@@ -32,7 +32,7 @@ public class PeripheralMidiInputDevice extends MidiInputDevice {
 
     @NonNull
     @Override
-    public String getDeviceName() throws SecurityException {
+    public String deviceName() throws SecurityException {
         if (TextUtils.isEmpty(bluetoothDevice.getName())) {
             return bluetoothDevice.getAddress();
         }
@@ -44,7 +44,7 @@ public class PeripheralMidiInputDevice extends MidiInputDevice {
     }
 
     @NonNull
-    public String getDeviceAddress() {
+    public String deviceAddress() {
         return bluetoothDevice.getAddress();
     }
 }

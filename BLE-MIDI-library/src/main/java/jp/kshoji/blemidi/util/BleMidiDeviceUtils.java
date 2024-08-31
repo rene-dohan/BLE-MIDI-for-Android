@@ -35,7 +35,7 @@ public final class BleMidiDeviceUtils {
      * @return null if no service found
      */
     @Nullable
-    public static BluetoothGattService getMidiService(@NonNull final Context context, @NonNull final BluetoothGatt bluetoothGatt) {
+    public static BluetoothGattService midiService(@NonNull final Context context, @NonNull final BluetoothGatt bluetoothGatt) {
         List<BluetoothGattService> services = bluetoothGatt.getServices();
         String[] uuidStringArray = context.getResources().getStringArray(R.array.uuidListForService);
 
@@ -59,7 +59,7 @@ public final class BleMidiDeviceUtils {
      * @return null if no characteristic found
      */
     @Nullable
-    public static BluetoothGattCharacteristic getMidiInputCharacteristic(@NonNull final Context context, @NonNull final BluetoothGattService bluetoothGattService) {
+    public static BluetoothGattCharacteristic inputCharacteristic(@NonNull final Context context, @NonNull final BluetoothGattService bluetoothGattService) {
         List<BluetoothGattCharacteristic> characteristics = bluetoothGattService.getCharacteristics();
         String[] uuidStringArray = context.getResources().getStringArray(R.array.uuidListForInputCharacteristic);
 

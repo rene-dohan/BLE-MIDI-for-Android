@@ -25,7 +25,7 @@ public final class CentralMidiOutputDevice extends MidiOutputDevice {
     public CentralMidiOutputDevice(@NonNull final Context context, @NonNull final BluetoothGatt bluetoothGatt) throws IllegalArgumentException, SecurityException {
         super();
         this.bluetoothGatt = bluetoothGatt;
-        BluetoothGattService midiService = BleMidiDeviceUtils.getMidiService(context, bluetoothGatt);
+        BluetoothGattService midiService = BleMidiDeviceUtils.midiService(context, bluetoothGatt);
         if (midiService == null) {
             List<UUID> uuidList = new ArrayList<>();
             for (BluetoothGattService service : bluetoothGatt.getServices())

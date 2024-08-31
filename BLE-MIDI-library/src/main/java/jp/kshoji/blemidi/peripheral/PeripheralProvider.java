@@ -303,7 +303,7 @@ public abstract class PeripheralProvider {
 
     public void disconnectDevice(@NonNull MidiInputDevice device) {
         if (!(device instanceof PeripheralMidiInputDevice)) return;
-        disconnectDevice(device.getDeviceAddress());
+        disconnectDevice(device.deviceAddress());
     }
 
     private void disconnectDevice(@NonNull String deviceAddress) throws SecurityException {

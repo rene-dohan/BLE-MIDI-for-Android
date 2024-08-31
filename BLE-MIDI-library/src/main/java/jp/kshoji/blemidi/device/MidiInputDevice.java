@@ -25,7 +25,7 @@ public abstract class MidiInputDevice {
      * @return device name
      */
     @NonNull
-    public abstract String getDeviceName();
+    public abstract String deviceName();
 
     /**
      * Obtains the device address
@@ -33,11 +33,11 @@ public abstract class MidiInputDevice {
      * @return device address
      */
     @NonNull
-    public abstract String getDeviceAddress();
+    public abstract String deviceAddress();
 
     @NonNull
     @Override
     public final String toString() {
-        return getDeviceName();
+        return deviceName();
     }
 }

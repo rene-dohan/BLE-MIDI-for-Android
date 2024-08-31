@@ -247,7 +247,7 @@ public class CentralCallback extends BluetoothGattCallback {
             return;
         }
 
-        disconnectByDeviceAddress(midiInputDevice.getDeviceAddress());
+        disconnectByDeviceAddress(midiInputDevice.deviceAddress());
     }
 
     void disconnectDevice(@NonNull MidiOutputDevice midiOutputDevice) {
