@@ -1,44 +1,16 @@
-plugins {
-    id 'com.android.library'
+rootProject.ext.namespace = 'jp.kshoji.blemidi'
+if (rootProject.ext.is_renetik_library_module) apply from: '../library.gradle'
+else apply from: '../../library.gradle'
+dependencies {
+    if (rootProject.ext.is_renetik_library_release) implementation "$renetik_android_core"
+    else implementation project(':renetik-android-core')
+    api 'jp.kshoji:javax-sound-midi:0.0.6:@aar'
+    api 'androidx.annotation:annotation:1.8.2'
+    api fileTree(dir: 'libs', include: ['*.jar'])
 }
-apply from: "${projectRoot}/common.gradle"
-android {
-    compileSdk project.properties.sdk_version
-    namespace "jp.kshoji.blemidi"
-
-    defaultConfig {
-        minSdkVersion 24
-        targetSdkVersion project.properties.sdk_version
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
-    publishing {
-        singleVariant('release') {
-            withSourcesJar()
-        }
-    }
-}
-
 repositories {
     maven {
         url 'https://github.com/kshoji/javax.sound.midi-for-Android/raw/develop/javax.sound.midi/repository'
     }
     mavenCentral()
-}
-
-dependencies {
-    api 'jp.kshoji:javax-sound-midi:0.0.6:@aar'
-    api 'androidx.annotation:annotation:1.8.2'
-    api fileTree(dir: 'libs', include: ['*.jar'])
 }
